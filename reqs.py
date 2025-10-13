@@ -7,6 +7,7 @@ from typing import List, Optional
 from models import User, Map, Hall, Table, WorkShift, Order, OrderItem, MenuItem, MenuCategory
 
 class UserInfoResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     tg_id: int
     sign_in_date: datetime
@@ -97,6 +98,7 @@ class WorkShiftResponse(BaseModel):
     orders: List[OrderResponse] = []
 
 class UserCreate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     tg_id: int
     username: str
     title_place_work: Optional[str] = None
