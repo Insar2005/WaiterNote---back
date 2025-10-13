@@ -4,6 +4,7 @@ from models import Hall, Map, MenuCategory, MenuItem, Order, async_session, User
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 from typing import List, Optional
+from models import User, Map, Hall, Table, WorkShift, Order, OrderItem, MenuItem, MenuCategory
 
 class UserInfoResponse(BaseModel):
     id: int
@@ -105,6 +106,13 @@ class UserCreate(BaseModel):
     shift_type: Optional[str] = "fixed"
     pay_for_shift: Optional[float] = 0.0
 
+async def add_new_user(user_data: UserCreate) -> UserInfoResponse:
+    async with async_session() as session:
+        user_info_model = User(**user_data.model_dump())  # ✅ можно сразу передать dict
+        session.add(user_info_model)
+        await session.commit()
+        await session.refresh(user_info_model)
+        return UserInfoResponse.model_validate(user_info_model)
 class MenuItemCreate(BaseModel):
     title: str
     description: Optional[str] = None
