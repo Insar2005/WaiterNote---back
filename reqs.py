@@ -32,18 +32,21 @@ async def get_user_info_by_tg_id(tg_id: int) -> UserInfoResponse | None:
             return UserInfoResponse.model_validate(user_info)
         return None
 class MenuItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     item_title: str
     price: float
     item_position: int
 
 class MenuCategoryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     title: str
     position: int
     menu_items: List[MenuItemResponse] = []
 
 class TableResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     table_number: int
     status: str
@@ -55,17 +58,20 @@ class TableResponse(BaseModel):
     pos_y: int
 
 class HallResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     hall_title: str
     hall_position: int
     tables_info: List[TableResponse] = []
 
 class MapResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     halls_info: List[HallResponse] = []
 
 
 class OrderItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     item_title: str
     price: float
@@ -74,6 +80,7 @@ class OrderItemResponse(BaseModel):
     comments: Optional[str]
 
 class OrderResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     hall_name: Optional[str]
     table_number: Optional[int]
@@ -86,6 +93,7 @@ class OrderResponse(BaseModel):
     order_items: List[OrderItemResponse] = []
 
 class WorkShiftResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     date: datetime
     start_time: datetime
@@ -116,17 +124,20 @@ async def add_new_user(user_data: UserCreate) -> UserInfoResponse:
         await session.refresh(user_info_model)
         return UserInfoResponse.model_validate(user_info_model)
 class MenuItemCreate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     title: str
     description: Optional[str] = None
     price: float
     position: Optional[int] = 0
 
 class MenuCategoryCreate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     title: str
     position: Optional[int] = 0
     menu_items: Optional[list[MenuItemCreate]] = []
 
 class TableCreate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     table_number: int
     pos_x: int
     pos_y: int
@@ -136,30 +147,36 @@ class TableCreate(BaseModel):
     corner_radius: int = 0
 
 class HallCreate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     hall_name: str
     position: Optional[int] = 0
     tables: Optional[list[TableCreate]] = []
 
 class MapCreate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     halls: Optional[list[HallCreate]] = []
 
 class OrderItemCreate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     item_id: int
     quantity: int = 1
     comments: Optional[str] = None
 
 class OrderCreate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     hall_id: Optional[int] = None
     table_id: Optional[int] = None
     comments: Optional[str] = None
     order_items: list[OrderItemCreate]
 
 class WorkShiftCreate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     start_time: datetime
     orders: Optional[list[OrderCreate]] = []
 
 
 class UserUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     username: Optional[str] = None
     title_place_work: Optional[str] = None
     language: Optional[str] = None
@@ -168,18 +185,34 @@ class UserUpdate(BaseModel):
     shift_type: Optional[str] = None
     pay_for_shift: Optional[float] = None
 
+async def update_user_info(tg_id=int, update_data = UserUpdate)->UserInfoResponse:
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.tg_id==tg_id))
+        if not user:
+            return None
+        for field, value in update_data.model_dump(exclude_unset=True).items():
+            setattr(user, field, value)
 
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+
+    # Возвращаем Pydantic ответ
+        return UserInfoResponse.model_validate(user)
 class MenuItemUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     title: Optional[str] = None
     description: Optional[str] = None
     price: Optional[float] = None
     position: Optional[int] = None
 
 class MenuCategoryUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     title: Optional[str] = None
     position: Optional[int] = None
 
 class TableUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     table_number: Optional[int] = None
     pos_x: Optional[int] = None
     pos_y: Optional[int] = None
@@ -189,20 +222,24 @@ class TableUpdate(BaseModel):
     corner_radius: Optional[int] = None
 
 class HallUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     hall_name: Optional[str] = None
     position: Optional[int] = None
 
 
 class OrderItemUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     quantity: Optional[int] = None
     comments: Optional[str] = None
 
 class OrderUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     hall_id: Optional[int] = None
     table_id: Optional[int] = None
     comments: Optional[str] = None
     status: Optional[str] = None  # например: "open", "paid", "cancelled"
 
 class WorkShiftUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     end_time: Optional[datetime] = None
     is_closed: Optional[bool] = None

@@ -38,6 +38,13 @@ async def get_user(tg_id:int):
 async def add_user(user_data: rq.UserCreate):
     user_info = await rq.add_new_user(user_data)
     return user_info
+
+@router.post("/{tg_id}/update")
+async def update_user(tg_id:int, update_data:rq.UserUpdate):
+    updated_user = await rq.update_user_info(tg_id, update_data)
+    if not updated_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return updated_user
 # @router.get("/{tg_id}")
 # async def get_user(tg_id: int):
 #     # тестовая заглушка
