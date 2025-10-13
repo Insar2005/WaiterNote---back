@@ -10,6 +10,7 @@ import reqs as rq
 @asynccontextmanager
 async def lifespan(app:FastAPI):
     await init_db()
+    yield
     print('Bot is ready')
 
 
