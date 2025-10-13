@@ -21,9 +21,9 @@ router = APIRouter(prefix="/api/users")
 # Кибербезопасность
 app.add_middleware(
     CORSMiddleware,
-    allow_origins = ["*"], 
-    allow_credentials = True,
-    allow_methods = ["*"],
+    allow_origins=["https://waiternote-f724a.web.app"],
+    allow_credentials=True,
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -33,6 +33,26 @@ async def get_user(tg_id:int):
     if not user_info:
         raise HTTPException(status_code=404, detail="User not found")
     return user_info
+
+# @router.get("/{tg_id}")
+# async def get_user(tg_id: int):
+#     # тестовая заглушка
+#     if tg_id == 821395808:
+#         return {"id": tg_id, "username": "cf_clearance"}
+#     raise HTTPException(status_code=404, detail="User not found")
+
+# # ✅ вручную разрешаем preflight OPTIONS (чтобы точно не блокировалось)
+# @router.options("/{tg_id}")
+# async def options_user(tg_id: int):
+#     return JSONResponse(
+#         content={},
+#         headers={
+#             "Access-Control-Allow-Origin": "https://waiternote-f724a.web.app",
+#             "Access-Control-Allow-Methods": "GET, OPTIONS",
+#             "Access-Control-Allow-Headers": "Content-Type, Authorization",
+#         },
+#     )
+
     
 
 app.include_router(router)
