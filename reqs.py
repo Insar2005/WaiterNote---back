@@ -17,6 +17,18 @@ class UserInfoResponse(BaseModel):
     shift_type: str
     pay_for_shift: float
 
+async def get_user_info_by_tg_id(tg_id: int) -> UserInfoResponse | None:
+    async with async_session() as session:
+        
+        user_info = await session.scalar(
+            select(User)
+            
+            .where(User.tg_id == tg_id)
+        )
+        
+        if user_info:
+            return UserInfoResponse.model_validate(user_info)
+        return None
 class MenuItemResponse(BaseModel):
     id: int
     item_title: str
