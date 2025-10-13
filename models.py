@@ -105,7 +105,7 @@ class Order(Base):
     comments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Связи
-    user: Mapped["User"] = relationship(back_populates="orders")
+    
     work_shift: Mapped["WorkShift"] = relationship(back_populates="orders")  # исправлено имя!
     order_items: Mapped[List["OrderItem"]] = relationship(back_populates="order", cascade="all, delete-orphan")
 

@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, APIRouter, HTTPException
+
 from fastapi.middleware.cors import CORSMiddleware
 
 from models import init_db
@@ -16,7 +17,7 @@ async def lifespan(app:FastAPI):
 
 
 app = FastAPI(title='To Do App', lifespan=lifespan)
-
+router = APIRouter(prefix="/api/users")
 # Кибербезопасность
 app.add_middleware(
     CORSMiddleware,
@@ -26,7 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/users/{tg_id}")
+@router.get("/{tg_id}")
 async def get_user(tg_id:int):
     user_info = await rq.get_user_info_by_tg_id(tg_id)
     if not user_info:
@@ -34,3 +35,4 @@ async def get_user(tg_id:int):
     return user_info
     
 
+app.include_router(router)
