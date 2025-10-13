@@ -39,7 +39,7 @@ async def add_user(user_data: rq.UserCreate):
     user_info = await rq.add_new_user(user_data)
     return user_info
 
-@router.post("/{tg_id}/update")
+@router.patch("/{tg_id}/update")
 async def update_user(tg_id:int, update_data:rq.UserUpdate):
     updated_user = await rq.update_user_info(tg_id, update_data)
     if not updated_user:
