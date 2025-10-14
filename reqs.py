@@ -136,7 +136,7 @@ async def create_new_item(item_data: MenuItemCreate) -> MenuItemResponse:
         new_item = MenuItem(
             category_id=item_data.category_id,
             item_title = item_data.item_title,
-            item_position = item_data.item_order,
+            item_position = item_data.item_position,
             price = item_data.price
         )
         session.add(new_item)
@@ -149,18 +149,30 @@ class MenuCategoryCreate(BaseModel):
     position: Optional[int] = 0
     menu_items: Optional[list[MenuItemCreate]] = []
 
-async def create_new_category(tg_id:int, create_data: MenuCategoryCreate) -> MenuCategoryResponse:
+
+
+async def create_new_category(tg_id: int, create_data: MenuCategoryCreate) -> MenuCategoryResponse:
     async with async_session() as session:
-        user_id = await session.sclar(select(User).where(User.tg_id==tg_id)).id
+        user = await session.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            raise ValueError("User not found")
+
         new_category = MenuCategory(
-            user_id = user_id,
-            title = create_data.title,
-            position = create_data.position
+            user_id=user.id,
+            title=create_data.title,
+            position=create_data.position,
         )
         session.add(new_category)
         await session.commit()
-        await session.refresh(new_category)
-        return MenuCategory.model_validate(new_category)
+
+        # Загружаем с подгрузкой menu_items
+        category = await session.scalar(
+            select(MenuCategory)
+            .options(selectinload(MenuCategory.menu_items))
+            .where(MenuCategory.id == new_category.id)
+        )
+
+        return MenuCategoryResponse.model_validate(category)
 
 async def delete_category(c_id:int)->bool:
     async with async_session() as session:
