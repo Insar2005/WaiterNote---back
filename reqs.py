@@ -125,17 +125,59 @@ async def add_new_user(user_data: UserCreate) -> UserInfoResponse:
         return UserInfoResponse.model_validate(user_info_model)
 class MenuItemCreate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    title: str
-    description: Optional[str] = None
+    item_title: str
+    
     price: float
-    position: Optional[int] = 0
+    item_position: Optional[int] = 0
+    category_id: int
 
+async def create_new_item(item_data: MenuItemCreate) -> MenuItemResponse:
+    async with async_session() as session:
+        new_item = MenuItem(
+            category_id=item_data.category_id,
+            item_title = item_data.item_title,
+            item_position = item_data.item_order,
+            price = item_data.price
+        )
+        session.add(new_item)
+        await session.commit()
+        await session.refresh(new_item)
+        return MenuItemResponse.model_validate(new_item)
 class MenuCategoryCreate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     title: str
     position: Optional[int] = 0
     menu_items: Optional[list[MenuItemCreate]] = []
 
+async def create_new_category(tg_id:int, create_data: MenuCategoryCreate) -> MenuCategoryResponse:
+    async with async_session() as session:
+        user_id = await session.sclar(select(User).where(User.tg_id==tg_id)).id
+        new_category = MenuCategory(
+            user_id = user_id,
+            title = create_data.title,
+            position = create_data.position
+        )
+        session.add(new_category)
+        await session.commit()
+        await session.refresh(new_category)
+        return MenuCategory.model_validate(new_category)
+
+async def delete_category(c_id:int)->bool:
+    async with async_session() as session:
+        category = await session.get(MenuCategory, c_id)
+        if not category:
+            return True
+        await session.delete(category)
+        await session.commit()
+        return True
+async def delete_item(i_id:int)->bool:
+    async with async_session() as session:
+        item = await session.get(MenuItem, i_id)
+        if not item:
+            return True
+        await session.delete(item)
+        await session.commit()
+        return True
 class TableCreate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     table_number: int
@@ -206,11 +248,45 @@ class MenuItemUpdate(BaseModel):
     price: Optional[float] = None
     position: Optional[int] = None
 
+async def menu_item_update(id:int, update_data:MenuItemUpdate) ->MenuItemResponse | None:
+    async with async_session() as session:
+        item = await session.get(MenuItem, id)
+        if not item:
+            return None
+        for field, value in update_data.model_dump(exclude_unset=True).items():
+            setattr(item, field, value)
+        
+        await session.commit()
+        await session.refresh(item)
+        return MenuItemResponse.model_validate(item)
 class MenuCategoryUpdate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+    
     title: Optional[str] = None
     position: Optional[int] = None
 
+async def menu_update(category_id:int,update_data: MenuCategoryUpdate)->MenuCategoryResponse | None:
+    async with async_session() as session:
+        category = await session.get(MenuCategory, category_id)
+        if not category:
+            return None
+        for field, value in update_data.model_dump(exclude_unset=True).items():
+            setattr(category, field, value)
+
+        await session.commit()
+        await session.refresh(category)
+        return MenuCategoryUpdate.model_validate(category)
+
+
+async def get_user_menu_with_items(tg_id: int)->MenuCategoryResponse:
+    async with async_session() as session:
+        categoryes = await session.scalars(
+            select(MenuCategory).join(User, MenuCategory.user_id == User.id).where(User.tg_id==tg_id).options(selectinload(MenuCategory.menu_items)).order_by(MenuCategory.position) 
+        )
+        if not categoryes:
+            return None
+        categories_list = list(categoryes)
+        return [MenuCategoryResponse.model_validate(cat) for cat in categories_list]
 class TableUpdate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     table_number: Optional[int] = None
