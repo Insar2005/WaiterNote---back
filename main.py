@@ -86,6 +86,26 @@ async def user_menu_item_update(item_id:int, update_data:rq.MenuItemUpdate):
 async def user_menu_item_delete(item_id:int):
     deleted = await rq.delete_item(item_id)
     return HTTPException(status_code=200, detail="DELETED SUCCESSFULY")
+
+@router.get("/{tg_id}/shifts/active_shift")
+async def user_active_shift(tg_id:int):
+    active_shift = await rq.get_active_shift(tg_id)
+    return active_shift
+
+@router.post("/{tg_id}/shifts/create")
+async def user_create_shift(tg_id: int, shift_data: rq.WorkShiftCreate):
+    created_shift = await rq.create_worksfhift(tg_id, shift_data)
+    return created_shift
+
+@router.delete("/shifts/{s_id}/delete")
+async def user_delete_shift(s_id:int):
+    deleted_shift = await rq.delete_workshift(s_id)
+    return deleted_shift
+
+@router.patch("/shifts/{s_id}/update")
+async def user_update_shift(s_id:int, update_data:rq.WorkShiftUpdate):
+    updated_shift = await rq.work_shift_update(s_id, update_data)
+    return updated_shift
 # @router.get("/{tg_id}")
 # async def get_user(tg_id: int):
 #     # тестовая заглушка

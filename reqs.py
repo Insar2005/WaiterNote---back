@@ -105,6 +105,17 @@ class WorkShiftResponse(BaseModel):
     is_closed: bool
     orders: List[OrderResponse] = []
 
+async def get_active_shift(tg_id:int) -> WorkShiftResponse | None:
+    async with async_session() as session:
+        active_shift = await session.scalar(
+    select(WorkShift)
+    .join(User, WorkShift.user_id == User.id)
+    .where(User.tg_id == tg_id, WorkShift.is_closed == False).options(selectinload(WorkShift.orders))
+)       
+        if not active_shift:
+            return None
+        return WorkShiftResponse.model_validate(active_shift)
+
 class UserCreate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     tg_id: int
@@ -185,6 +196,7 @@ async def delete_category(c_id:int)->bool:
 async def delete_item(i_id:int)->bool:
     async with async_session() as session:
         item = await session.get(MenuItem, i_id)
+        print(item)
         if not item:
             return True
         await session.delete(item)
@@ -226,9 +238,37 @@ class OrderCreate(BaseModel):
 class WorkShiftCreate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     start_time: datetime
+    is_closed: bool = False
     orders: Optional[list[OrderCreate]] = []
 
 
+async def create_worksfhift(tg_id:int, shift_data:WorkShiftCreate) -> WorkShiftResponse | None:
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            raise ValueError("User not found")
+        new_shift = WorkShift{
+            user_id:user.id,
+            start_time: shift_data.start_time
+            is_closed: False
+        }
+        session.add(new_shift)
+        await session.commit()
+
+        workshift = await session.scalar(
+            select(WorkShift)
+            .options(selectinload(WorkShift.orders))
+            .where(WorkShift.id == new_shift.id))
+        return WorkShiftResponse.model_validate(workshift)
+
+async def delete_workshift(s_id:int) ->bool:
+    async with async_session() as session:
+        work_shift = await.session.get(WorkShift, s_id)
+        if not work_shift:
+            return True
+        await session.delete(work_shift)
+        await session.commit()
+        return True
 class UserUpdate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     username: Optional[str] = None
@@ -290,7 +330,7 @@ async def menu_update(category_id:int,update_data: MenuCategoryUpdate)->MenuCate
         return MenuCategoryUpdate.model_validate(category)
 
 
-async def get_user_menu_with_items(tg_id: int)->MenuCategoryResponse:
+async def get_user_menu_with_items(tg_id: int)->MenuCategoryResponse | None:
     async with async_session() as session:
         categoryes = await session.scalars(
             select(MenuCategory).join(User, MenuCategory.user_id == User.id).where(User.tg_id==tg_id).options(selectinload(MenuCategory.menu_items)).order_by(MenuCategory.position) 
@@ -329,5 +369,20 @@ class OrderUpdate(BaseModel):
 
 class WorkShiftUpdate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+    total_orders: Optional[int] = None
+    total_pay_for_shift: Optional[float] = None
+    total_cash_register: Optional[float] = None
+    total_tips: Optional[float] = None
     end_time: Optional[datetime] = None
     is_closed: Optional[bool] = None
+
+async def work_shift_update(s_id:int, update_data:WorkShiftUpdate)->WorkShiftResponse | None:
+    async with async_session() as session:
+        work_shift = await session.get(WorkShift, s_id)
+        if not work_shift:
+            return None
+        for field, value in update_data.model_dump(exclude_unset=True).items():
+            setattr(work_shift, field, value)
+        await session.commit()
+        await session.refresh(work_shift)
+        return WorkShiftResponse.model_validate(work_shift)
