@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/users")
 # Кибербезопасность
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://waiternote-f724a.web.app"],
+    allow_origins=["https://waiternote-52ff2.web.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
