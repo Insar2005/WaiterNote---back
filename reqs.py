@@ -2,7 +2,7 @@ from sqlalchemy import select, update, delete, func
 from sqlalchemy.orm import selectinload
 from models import Hall, Map, MenuCategory, MenuItem, Order, async_session, User, Table
 from pydantic import BaseModel, ConfigDict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from models import User, Map, Hall, Table, WorkShift, Order, OrderItem, MenuItem, MenuCategory
 
@@ -98,6 +98,7 @@ class WorkShiftResponse(BaseModel):
     date: datetime
     start_time: datetime
     end_time: Optional[datetime]
+    shift_duration: Optional[float]
     total_orders: int
     total_pay_for_shift: float
     total_cash_register: float
@@ -247,11 +248,11 @@ async def create_worksfhift(tg_id:int, shift_data:WorkShiftCreate) -> WorkShiftR
         user = await session.scalar(select(User).where(User.tg_id == tg_id))
         if not user:
             raise ValueError("User not found")
-        new_shift = WorkShift{
-            user_id:user.id,
-            start_time: shift_data.start_time
-            is_closed: False
-        }
+        new_shift = WorkShift(
+            user_id= user.id,
+            start_time=datetime.now(timezone.utc),
+            is_closed= False
+        )
         session.add(new_shift)
         await session.commit()
 
@@ -263,7 +264,7 @@ async def create_worksfhift(tg_id:int, shift_data:WorkShiftCreate) -> WorkShiftR
 
 async def delete_workshift(s_id:int) ->bool:
     async with async_session() as session:
-        work_shift = await.session.get(WorkShift, s_id)
+        work_shift = await session.get(WorkShift, s_id)
         if not work_shift:
             return True
         await session.delete(work_shift)
@@ -369,11 +370,12 @@ class OrderUpdate(BaseModel):
 
 class WorkShiftUpdate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+    end_time: Optional[datetime] = None
+    shift_duration: Optional[float] = None
     total_orders: Optional[int] = None
     total_pay_for_shift: Optional[float] = None
     total_cash_register: Optional[float] = None
     total_tips: Optional[float] = None
-    end_time: Optional[datetime] = None
     is_closed: Optional[bool] = None
 
 async def work_shift_update(s_id:int, update_data:WorkShiftUpdate)->WorkShiftResponse | None:
