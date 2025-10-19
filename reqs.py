@@ -73,11 +73,8 @@ async def get_map_info(tg_id: int) -> list[HallResponse] | None:
     async with async_session() as session:
         result = await session.scalars(
             select(Hall)
-            .join(User, Hall.user_id == User.id)
-            .where(User.tg_id == tg_id)
-            .options(
-                selectinload(Hall.tables_info)
-            )
+            .where(Hall.user_id == select(User.id).where(User.tg_id == tg_id))
+            .options(selectinload(Hall.tables_info))
             .order_by(Hall.hall_position)
         )
 
@@ -87,6 +84,7 @@ async def get_map_info(tg_id: int) -> list[HallResponse] | None:
             return None
 
         return [HallResponse.model_validate(hall) for hall in halls_list]
+
 class OrderItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

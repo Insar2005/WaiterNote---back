@@ -155,6 +155,9 @@ class MenuCategory(Base):
     menu_items: Mapped[List["MenuItem"]] = relationship(back_populates="category", cascade="all, delete-orphan")
 
 
+
 async def init_db():
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        #await conn.run_sync(lambda sync_conn: Base.metadata.drop_all(bind=sync_conn))
+        await conn.run_sync(lambda sync_conn: Base.metadata.create_all(bind=sync_conn))
+        

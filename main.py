@@ -114,7 +114,7 @@ async def user_update_shift(s_id:int, update_data:rq.WorkShiftUpdate):
 @router.get("/{tg_id}/map_info")
 async def user_map_info(tg_id:int):
     map_info = await rq.get_map_info(tg_id)
-    if not user_menu:
+    if not map_info:
         raise HTTPException(status_code=404, detail="Map_info not found")
     return map_info
 
