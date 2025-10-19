@@ -1,10 +1,10 @@
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.orm import selectinload
-from models import Hall, Map, MenuCategory, MenuItem, Order, async_session, User, Table
+
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime, timezone
 from typing import List, Optional
-from models import User, Map, Hall, Table, WorkShift, Order, OrderItem, MenuItem, MenuCategory
+from models import User, Hall, Table, WorkShift, Order, OrderItem, MenuItem, MenuCategory, async_session
 
 class UserInfoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -47,7 +47,9 @@ class MenuCategoryResponse(BaseModel):
 
 class TableResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
     id: int
+    hall_id: int
     table_number: int
     status: str
     rotation: int
@@ -60,16 +62,31 @@ class TableResponse(BaseModel):
 class HallResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    user_id: int
     hall_title: str
     hall_position: int
     tables_info: List[TableResponse] = []
 
-class MapResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    halls_info: List[HallResponse] = []
 
 
+async def get_map_info(tg_id: int) -> list[HallResponse] | None:
+    async with async_session() as session:
+        result = await session.scalars(
+            select(Hall)
+            .join(User, Hall.user_id == User.id)
+            .where(User.tg_id == tg_id)
+            .options(
+                selectinload(Hall.tables_info)
+            )
+            .order_by(Hall.hall_position)
+        )
+
+        halls_list = list(result)
+
+        if not halls_list:
+            return None
+
+        return [HallResponse.model_validate(hall) for hall in halls_list]
 class OrderItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -204,14 +221,35 @@ async def delete_item(i_id:int)->bool:
         await session.commit()
         return True
 class TableCreate(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    table_number: int
-    pos_x: int
-    pos_y: int
-    width: int
-    height: int
+    hall_id: int
+    table_number: int = 1
+    status: str = "free"
     rotation: int = 0
     corner_radius: int = 0
+    width: int = 100
+    height: int = 100
+    pos_x: int = 0
+    pos_y: int = 0
+
+async def create_table(h_id:int, create_data: TableCreate) -> TableResponse:
+    async with async_session() as session:
+        new_table = Table(
+            hall_id=create_data.hall_id,
+            
+            status=create_data.status,
+            rotation=create_data.rotation,
+            corner_radius=create_data.corner_radius,
+            width=create_data.width,
+            height=create_data.height,
+            pos_x=create_data.pos_x,
+            pos_y=create_data.pos_y,
+        )
+
+        session.add(new_table)
+        await session.commit()
+        await session.refresh(new_table)
+
+        return TableResponse.model_validate(new_table)
 
 class HallCreate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -219,9 +257,27 @@ class HallCreate(BaseModel):
     position: Optional[int] = 0
     tables: Optional[list[TableCreate]] = []
 
-class MapCreate(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    halls: Optional[list[HallCreate]] = []
+async def create_hall(tg_id: int, hall_data:HallCreate) -> HallResponse | None:
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            raise ValueError("User not found")
+        new_hall = Hall(
+            user_id = user.id,
+            hall_name = hall_data.hall_name,
+            position = hall_data.position
+        )
+        session.add(new_hall)
+        await session.commit
+
+        hall = await session.scalar(
+            select(Hall)
+            .options(selectinload(Hall.tables_info))
+            .where(Hall.id == new_hall.id)
+
+        )
+
+        return HallResponse.model_validate(hall)
 
 class OrderItemCreate(BaseModel):
     model_config = ConfigDict(from_attributes=True)

@@ -28,42 +28,40 @@ class User(Base):
     # Связи
     menu_categories: Mapped[List["MenuCategory"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     work_shifts: Mapped[List["WorkShift"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    map_info: Mapped[List["Map"]] = relationship(back_populates="user", cascade="all, delete-orphan")  
+    halls: Mapped[List["Hall"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
-class Map(Base):
-    __tablename__='maps'
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
-    user: Mapped["User"] = relationship(back_populates='map_info')
-    halls_info: Mapped[List["Hall"]] = relationship(back_populates="map", cascade="all, delete-orphan")
 
 class Hall(Base):
     __tablename__='halls'
     id: Mapped[int] = mapped_column(primary_key=True)
-    map_id: Mapped[int] = mapped_column(ForeignKey('maps.id', ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete="CASCADE"))
     hall_title: Mapped[str] = mapped_column(String(128))
     hall_position: Mapped[int] = mapped_column(Integer, default=0)
     tables_info: Mapped[List["Table"]] = relationship(back_populates="hall")
-    map: Mapped["Map"]=relationship(back_populates="halls_info")
+    user: Mapped["User"]=relationship(back_populates="halls")
 
 class Table(Base):
     __tablename__ = 'tables'
 
     id: Mapped[int] = mapped_column(primary_key=True)
     current_order_id: Mapped[Optional[int]] = mapped_column(ForeignKey('orders.id'), nullable=True)
-    hall_id:Mapped[int]= mapped_column(ForeignKey('halls.id'), nullable=True)
+    hall_id: Mapped[int] = mapped_column(ForeignKey('halls.id'), nullable=True)
     table_number: Mapped[int] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(String(64), default="free")  # free, waiting, no pay, payed
-    #settings
-    rotation: Mapped[int] = mapped_column(Integer, default=0)  # угол поворота стола на плане -180..180
-    corner_radius: Mapped[int] = mapped_column(Integer, default=0)  # радиус скругления углов стола на плане 0..100
-    width: Mapped[int] = mapped_column(Integer, default=100)  # ширина стола на плане в пикселях
-    height: Mapped[int] = mapped_column(Integer, default=100)  # высота стола на плане в пикселях
-    pos_x: Mapped[int] = mapped_column(Integer, default=0)  # координата X на плане
-    pos_y: Mapped[int] = mapped_column(Integer, default=0)  # координата Y на плане
+    status: Mapped[str] = mapped_column(String(64), default="free")
+    rotation: Mapped[int] = mapped_column(Integer, default=0)
+    corner_radius: Mapped[int] = mapped_column(Integer, default=0)
+    width: Mapped[int] = mapped_column(Integer, default=100)
+    height: Mapped[int] = mapped_column(Integer, default=100)
+    pos_x: Mapped[int] = mapped_column(Integer, default=0)
+    pos_y: Mapped[int] = mapped_column(Integer, default=0)
+
     # Связи
     hall: Mapped["Hall"] = relationship(back_populates="tables_info")
-    
+    current_order: Mapped[Optional["Order"]] = relationship(
+        "Order",
+        lazy="joined",
+        foreign_keys=[current_order_id]
+    )
 
 class WorkShift(Base):
     __tablename__ = 'work_shifts'
@@ -95,18 +93,17 @@ class Order(Base):
     work_shift_id: Mapped[int] = mapped_column(ForeignKey('work_shifts.id'), nullable=True)  
     hall_id: Mapped[Optional[int]] = mapped_column(ForeignKey('halls.id'), nullable=True)
     table_id: Mapped[Optional[int]] = mapped_column(ForeignKey('tables.id'), nullable=True)
-    table_number: Mapped[int] = mapped_column(nullable=True)  # номер стола
-    hall_name: Mapped[str] = mapped_column(String(128), nullable=True)  # название зала
+    table_number: Mapped[int] = mapped_column(nullable=True)
+    hall_name: Mapped[str] = mapped_column(String(128), nullable=True)
     order_date: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
     total_price: Mapped[float] = mapped_column(Float, default=0.0)
     tips: Mapped[float] = mapped_column(Float, default=0.0)
     tax: Mapped[float] = mapped_column(Float, default=0.0)
-    status: Mapped[str] = mapped_column(String(32), default="in_progress")  # in_progress, completed, cancelled
+    status: Mapped[str] = mapped_column(String(32), default="in_progress")
     comments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Связи
-    
-    work_shift: Mapped["WorkShift"] = relationship(back_populates="orders")  # исправлено имя!
+    work_shift: Mapped["WorkShift"] = relationship(back_populates="orders")
     order_items: Mapped[List["OrderItem"]] = relationship(back_populates="order", cascade="all, delete-orphan")
 
 

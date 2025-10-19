@@ -46,11 +46,12 @@ async def update_user(tg_id:int, update_data:rq.UserUpdate):
         raise HTTPException(status_code=404, detail="User not found")
     return updated_user
 
+#menu
 @router.get("/{tg_id}/menu")
 async def get_user_menu(tg_id:int):
     user_menu = await rq.get_user_menu_with_items(tg_id)
     if not user_menu:
-        raise HTTPException(status_code=345, detail="Menu not found")
+        raise HTTPException(status_code=404, detail="Menu not found")
     return user_menu
 
 @router.post("/{tg_id}/menu/create")
@@ -87,6 +88,7 @@ async def user_menu_item_delete(item_id:int):
     deleted = await rq.delete_item(item_id)
     return HTTPException(status_code=200, detail="DELETED SUCCESSFULY")
 
+#SHIFT
 @router.get("/{tg_id}/shifts/active_shift")
 async def user_active_shift(tg_id:int):
     active_shift = await rq.get_active_shift(tg_id)
@@ -106,24 +108,43 @@ async def user_delete_shift(s_id:int):
 async def user_update_shift(s_id:int, update_data:rq.WorkShiftUpdate):
     updated_shift = await rq.work_shift_update(s_id, update_data)
     return updated_shift
-# @router.get("/{tg_id}")
-# async def get_user(tg_id: int):
-#     # тестовая заглушка
-#     if tg_id == 821395808:
-#         return {"id": tg_id, "username": "cf_clearance"}
-#     raise HTTPException(status_code=404, detail="User not found")
 
-# # ✅ вручную разрешаем preflight OPTIONS (чтобы точно не блокировалось)
-# @router.options("/{tg_id}")
-# async def options_user(tg_id: int):
-#     return JSONResponse(
-#         content={},
-#         headers={
-#             "Access-Control-Allow-Origin": "https://waiternote-f724a.web.app",
-#             "Access-Control-Allow-Methods": "GET, OPTIONS",
-#             "Access-Control-Allow-Headers": "Content-Type, Authorization",
-#         },
-#     )
+
+#HALL
+@router.get("/{tg_id}/map_info")
+async def user_map_info(tg_id:int):
+    map_info = await rq.get_map_info(tg_id)
+    if not user_menu:
+        raise HTTPException(status_code=404, detail="Map_info not found")
+    return map_info
+
+@router.patch("/hall/{h_id}/update")
+async def user_hall_update(h_id: int, update_data: rq.HallUpdate):
+    pass
+
+@router.post("/{tg_id}/map_info/hall/create")
+async def user_hall_create(tg_id:int, create_data: rq.HallCreate):
+    created_hall = await rq.create_hall(tg_id, create_data)
+    return created_hall
+
+@router.delete("/hall/{h_id}/delete")
+async def user_hall_delete(h_id:int):
+    pass
+
+
+#TABLE
+@router.post("/{h_id}/table/create")
+async def user_table_create(h_id:int, create_data:rq.TableCreate):
+    table = await rq.create_table(h_id, create_data)
+    return table
+
+@router.patch("/table/{t_id}/update")
+async def user_table_update(t_id:int, update_data: rq.TableUpdate):
+    pass
+
+@router.delete("/table/{t_id}/delete")
+async def user_table_delete(t_id:int):
+    pass
 
     
 
