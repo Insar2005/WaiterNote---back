@@ -262,11 +262,11 @@ async def create_hall(tg_id: int, hall_data:HallCreate) -> HallResponse | None:
             raise ValueError("User not found")
         new_hall = Hall(
             user_id = user.id,
-            hall_name = hall_data.hall_name,
-            position = hall_data.position
+            hall_title = hall_data.hall_name,
+            hall_position = hall_data.position
         )
         session.add(new_hall)
-        await session.commit
+        await session.commit()
 
         hall = await session.scalar(
             select(Hall)
@@ -406,10 +406,36 @@ class TableUpdate(BaseModel):
 
 class HallUpdate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    hall_name: Optional[str] = None
+    hall_title: Optional[str] = None
     position: Optional[int] = None
 
 
+async def hall_update(h_id:int, update_data:HallUpdate) -> HallResponse:
+    async with async_session() as session:
+        hall = await session.scalar(select(Hall).where(Hall.id==h_id))
+        if not hall:
+            return False
+        for field, value in update_data.model_dump(exclude_unset=True).items():
+            setattr(hall, field, value)
+        session.add(hall)
+        await session.commit()
+        await session.refresh(hall)
+        hall = await session.scalar(
+            select(Hall)
+            .options(selectinload(Hall.tables_info))
+            .where(Hall.id == hall.id)
+
+        )
+        return HallResponse.model_validate(hall)
+
+async def delete_hall(h_id:int) -> bool:
+    async with async_session() as session:
+        hall = await session.get(Hall, h_id)
+        if not hall:
+            return False
+        await session.delete(hall)
+        await session.commit()
+        return True
 class OrderItemUpdate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     quantity: Optional[int] = None

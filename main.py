@@ -120,7 +120,10 @@ async def user_map_info(tg_id:int):
 
 @router.patch("/hall/{h_id}/update")
 async def user_hall_update(h_id: int, update_data: rq.HallUpdate):
-    pass
+    updated = await rq.hall_update(h_id, update_data)
+    if not updated:
+        return HTTPException(status_code = 404, detail="Not updated")
+    return updated
 
 @router.post("/{tg_id}/map_info/hall/create")
 async def user_hall_create(tg_id:int, create_data: rq.HallCreate):
@@ -129,7 +132,8 @@ async def user_hall_create(tg_id:int, create_data: rq.HallCreate):
 
 @router.delete("/hall/{h_id}/delete")
 async def user_hall_delete(h_id:int):
-    pass
+    deleted = await rq.delete_hall(h_id)
+    return deleted
 
 
 #TABLE
