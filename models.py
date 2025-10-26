@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_
 from typing import Optional, List
 from datetime import datetime, timezone 
 #Здесь создаем и подключаемся к бд
-engine = create_async_engine(url='sqlite+aiosqlite:///db.sqlite3', echo = True)
+engine = create_async_engine(url='postgresql+asyncpg://gen_user:Pa;Q)i&^rlVs3M@10991957a615ef4315a8f228.twc1.net:5432/default_db?sslmode=verify-full', echo = True)
 
 async_session = async_sessionmaker(bind = engine, expire_on_commit=False)
 
