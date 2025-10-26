@@ -2,17 +2,23 @@ from sqlalchemy import ForeignKey, String,Float, BigInteger, Text, Integer
 from sqlalchemy.orm import Mapped,  DeclarativeBase, mapped_column, relationship
 from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
 import urllib.parse
+import ssl
+import os
 
 from typing import Optional, List
 from datetime import datetime, timezone 
 #Здесь создаем и подключаемся к бд
 password = urllib.parse.quote_plus("Pa;Q)i&^rlVs3M")
-
+ssl_context = ssl.create_default_context(cafile=os.path.expanduser("~/.cloud_cert/ca.crt"))
+DATABASE_URL = (
+    f"postgresql+asyncpg://gen_user:{password}@"
+    "10991957a615ef4315a8f228.twc1.net:5432/default_db"
+)
 engine = create_async_engine(
-    url=f"postgresql+asyncpg://gen_user:{password}@10991957a615ef4315a8f228.twc1.net:5432/default_db?sslmode=require",
+    DATABASE_URL,
+    connect_args={"ssl": ssl_context},
     echo=True,
 )
-
 async_session = async_sessionmaker(bind = engine, expire_on_commit=False)
 
 class Base(AsyncAttrs, DeclarativeBase):
