@@ -1,10 +1,17 @@
 from sqlalchemy import ForeignKey, String,Float, BigInteger, Text, Integer
 from sqlalchemy.orm import Mapped,  DeclarativeBase, mapped_column, relationship
 from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
+import urllib.parse
+
 from typing import Optional, List
 from datetime import datetime, timezone 
 #Здесь создаем и подключаемся к бд
-engine = create_async_engine(url='postgresql+asyncpg://gen_user:Pa;Q)i&^rlVs3M@10991957a615ef4315a8f228.twc1.net:5432/default_db?sslmode=verify-full', echo = True)
+password = urllib.parse.quote_plus("Pa;Q)i&^rlVs3M")
+
+engine = create_async_engine(
+    url=f"postgresql+asyncpg://gen_user:{password}@10991957a615ef4315a8f228.twc1.net:5432/default_db?sslmode=require",
+    echo=True,
+)
 
 async_session = async_sessionmaker(bind = engine, expire_on_commit=False)
 
