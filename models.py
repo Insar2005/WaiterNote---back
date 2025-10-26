@@ -3,15 +3,19 @@ from sqlalchemy.orm import Mapped,  DeclarativeBase, mapped_column, relationship
 from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
 from typing import Optional, List
 from datetime import datetime, timezone 
+import asyncpg
+import asyncio
 import ssl, os
 #Здесь создаем и подключаемся к бд
 ssl_context = ssl.create_default_context(
-    cafile=os.path.expanduser("~/.cloud_cert/ca.crt")
+    cafile=os.path.expanduser("./.cloud_cert/ca.crt")
 )
 
 engine = create_async_engine(
-    url="postgresql+asyncpg://gen_user:Pa%3BQ%29i%26%5ErlVs3M@10991957a615ef4315a8f228.twc1.net:5432/default_db",
-    connect_args={"ssl": ssl_context},
+    url="postgresql+asyncpg://gen_user:Pa;Q)i&^rlVs3M@10991957a615ef4315a8f228.twc1.net:5432/default_db",
+    connect_args={
+        "ssl": ssl_context # или "prefer", "allow", "disable"
+    },
     echo=True,
 )
 
@@ -168,6 +172,7 @@ class MenuCategory(Base):
 async def init_db():
     async with engine.begin() as conn:
         #await conn.run_sync(lambda sync_conn: Base.metadata.drop_all(bind=sync_conn))
+        print("✅ PostgreSQL connected and tables created")
         await conn.run_sync(lambda sync_conn: Base.metadata.create_all(bind=sync_conn))
         print("✅ PostgreSQL connected and tables created")
-        
+
