@@ -29,13 +29,14 @@ app.add_middleware(
 @router.get("/{tg_id}")
 async def get_user_info_by_tg_id(tg_id: int) -> UserResponse | None:
     async with async_session() as session:
-        
-            user_info = await session.scalar(
-                select(User).where(User.tg_id == tg_id)
-            )
-            
-            return UserResponse.model_validate(user_info) if user_info else HTTPException(status_code=404, detail="User not found")
-            
+        user_info = await session.scalar(
+            select(User).where(User.tg_id == tg_id)
+        )
+
+        if not user_info:
+            raise HTTPException(status_code=4004, detail="User not found")
+
+        return UserResponse.model_validate(user_info)
       
 
 
