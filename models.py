@@ -39,7 +39,7 @@ class User(Base):
     place_work_title: Mapped[Optional[str]] = mapped_column(String(255))
     timezone: Mapped[str] = mapped_column(String(100), default="Europe/Moscow")
     currency: Mapped[str] = mapped_column(String(10), default="RUB")
-    service_percent: Mapped[int] = mapped_column(Integer, default=10)
+    service_percent: Mapped[int] = mapped_column(Integer, default=0)
     shift_type: Mapped[str] = mapped_column(String(20), default="fixed")
     pay_for_shift: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
 
