@@ -34,7 +34,7 @@ async def get_user_info_by_tg_id(tg_id: int) -> UserResponse | None:
                 select(User).where(User.tg_id == tg_id)
             )
             
-            return UserResponse.model_validate(user_info) if user_info else None
+            return UserResponse.model_validate(user_info) if user_info else HTTPException(status_code=404, detail="User not found")
             
       
 
