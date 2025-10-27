@@ -1,0 +1,110 @@
+{
+//   === ОСНОВНАЯ ИНФОРМАЦИЯ ПОЛЬЗОВАТЕЛЯ ===
+  "tg_id": 123456789,
+  "username": "ivan_off",
+  "language": "ru",
+  "placeWorkTitle": "Ресторан 'У Олега'",
+  "timezone": "Europe/Moscow",
+  "currency": "RUB",
+  "service_percent": 10,
+  "shift_type": "fixed",
+  "pay_for_shift": 1500,
+
+  // === ИСТОРИЯ СМЕН ===
+  "shifts": [
+    {
+      "id": "shift_001",
+      "start_time": "2024-01-20T09:00:00Z",
+      "end_time": "2024-01-20T18:00:00Z",
+      "placeWorkTitle": "Ресторан 'У Олега'",
+      "currency": "RUB",
+      "service_percent": 10,
+      "shift_type": "fixed",
+      "pay_for_shift": 1500,
+      "total_tips": 3200,
+      "total_cash_register": 45200,
+      "duration": 540,
+
+      "orders": [
+        {
+          "id": "order_002",
+          "table_number": 5,
+          "hall_id": "main_hall",
+          "opened_at": "2024-01-20T14:00:00Z",
+          "closed_at": null,
+          "comments": "День рождения, торт свой",
+          "tips": 500,
+          "total_price": 12500,
+          "is_paid": false,
+          "is_done": false,
+
+          "order_items": [
+            {
+              "item_id": "dish_005",
+              "item_title": "Стейк Рибай",
+              "item_price": 1200,
+              "quantity": 2,
+              "comment": "Средней прожарки"
+            },
+            {
+              "item_id": "drink_007",
+              "item_title": "Вино красное",
+              "item_price": 800,
+              "quantity": 1,
+              "comment": "Подать сразу"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+
+  // === ЗАЛЫ И СТОЛЫ ===
+  "halls": [
+    {
+      "id": "main_hall",
+      "name": "Основной зал",
+      "position": 1,
+      "tables": [
+        {
+          "number": 5,
+          "x": 350,
+          "y": 200,
+          "width": 100,
+          "height": 100,
+          "rotation": 0,
+          "borderRadius": 15,
+          "current_order": "order_002",
+          "status": "occupied"
+        }
+      ]
+    }
+  ],
+
+  // === МЕНЮ ===
+  "menu": [
+    {
+      "catTitle": "Горячие блюда",
+      "catPosition": 2,
+      "items": [
+        {
+          "id": "dish_005",
+          "itemTitle": "Стейк Рибай",
+          "itemPosition": 1,
+          "itemDescription": "Мраморная говядина 300г с овощами гриль",
+          "itemPrice": 1200
+        },
+        {
+          "id": "dish_015",
+          "itemTitle": "Плов узбекский",
+          "itemPosition": 2,
+          "itemDescription": "Традиционный плов с бараниной и специями",
+          "itemPrice": 850
+        }
+      ]
+    }
+  ],
+
+  "created_at": "2024-01-15T10:00:00Z",
+  "updated_at": "2024-01-20T15:30:00Z"
+}
