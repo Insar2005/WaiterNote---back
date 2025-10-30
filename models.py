@@ -15,7 +15,7 @@ ssl_context = ssl.create_default_context(
 engine = create_async_engine(
     url="postgresql+asyncpg://gen_user:Pa;Q)i&^rlVs3M@10991957a615ef4315a8f228.twc1.net:5432/WaiterNote",
     connect_args={"ssl": ssl_context},
-    echo=True,
+    echo=True,pool_recycle=1800
 )
 
 async_session = async_sessionmaker(bind=engine, expire_on_commit=False)
