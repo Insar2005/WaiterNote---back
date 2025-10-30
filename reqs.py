@@ -94,9 +94,9 @@ class UserResponse(BaseModel):
     pay_for_shift: float
     created_at: int
     updated_at: int
-    shifts: List[ShiftResponse]
-    menu: List[MenuCategoryResponse]
-    halls: List[HallResponse]
+    shifts: List[ShiftResponse] = []
+    menu: List[MenuCategoryResponse] = []
+    halls: List[HallResponse] = []
 
 
 
