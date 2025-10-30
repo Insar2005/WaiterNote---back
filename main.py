@@ -32,21 +32,43 @@ app.add_middleware(
 @router.get("/{tg_id}")
 async def get_user_data(tg_id: int):
     async with async_session() as session:
-        result = await session.execute(
-            select(User)
-            .options(
-                selectinload(User.shifts).selectinload(Shift.orders),
-                selectinload(User.halls).selectinload(Hall.tables),
-                selectinload(User.menu).selectinload(MenuCategory.items),
-                with_loader_criteria(Shift, lambda cls: cls.is_closed == False)
-            )
-            .where(User.tg_id == tg_id)
+        # Получаем пользователя
+        user_result = await session.execute(
+            select(User).where(User.tg_id == tg_id)
         )
-        user = result.scalars().first()
+        user = user_result.scalars().first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
+        
+        # Отдельно загружаем связанные данные с фильтрацией
+        await session.execute(
+            select(Shift)
+            .where(Shift.user_id == user.id, Shift.is_closed == False)
+            .options(
+                selectinload(Shift.orders)
+                .selectinload(Order.items)
+            )
+        )
+        
+        await session.execute(
+            select(Hall)
+            .where(Hall.user_id == user.id)
+            .options(selectinload(Hall.tables))
+        )
+        
+        await session.execute(
+            select(MenuCategory)
+            .where(MenuCategory.user_id == user.id)
+            .options(selectinload(MenuCategory.items))
+        )
+        
+        # Явно обновляем объект
+        await session.refresh(user, ["shifts", "halls", "menu"])
+        
         return schem.UserResponse.model_validate(user)
-    
+        
+
+
 @router.patch("/{user_id}")
 async def update_user(user_id: int, user: schem.UserUpdate):
     async with async_session() as session:
@@ -93,11 +115,11 @@ async def create_user(user: schem.UserCreate):
 async def create_shift(shift: schem.ShiftCreate, user_id: int):
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.id == user_id))
+        
         # Создаём смену
         db_shift = Shift(
             user_id=user_id,
             start_time=shift.start_time,
-            is_closed=shift.is_closed,
             place_work_title=user.place_work_title,
             currency=user.currency,
             service_percent=user.service_percent,
@@ -107,19 +129,11 @@ async def create_shift(shift: schem.ShiftCreate, user_id: int):
         session.add(db_shift)
         await session.commit()
         await session.refresh(db_shift)
-
-        # Загружаем смену с заказами и позициями
-        result = await session.execute(
-            select(Shift)
-            .options(selectinload(Shift.orders).selectinload(Order.items))
-            .where(Shift.id == db_shift.id)
-        )
-
-        shift_with_orders = result.scalars().first()
-        return schem.ShiftResponse.model_validate(shift_with_orders)
-
+        db_shift.orders = []
+        # У новой смены заказов точно нет - возвращаем как есть
+        return schem.ShiftResponse.model_validate(db_shift)
 @router.get("/shifts")
-async def get_shifts_by_timestamp(min: datetime, max: datetime):
+async def get_shifts_by_timestamp(min: int, max: int):
     async with async_session() as session:
         result = await session.execute(
             select(Shift)
@@ -161,9 +175,12 @@ async def delete_shift(shift_id: int):
 @router.post("/{shift_id}/orders")
 async def create_order(order: schem.OrderCreate, shift_id: int):
     async with async_session() as session:
-        # Проверяем, существует ли смена
+        # НЕ блокируем смену, просто проверяем существование
+        shift = await session.scalar(select(Shift).where(Shift.id == shift_id))
+        if not shift:
+            raise HTTPException(status_code=404, detail="Shift not found")
         
-        # Создаем заказ без items
+        # Создаем заказ
         db_order = Order(
             shift_id=shift_id,
             table_id=order.table_id,
@@ -171,10 +188,9 @@ async def create_order(order: schem.OrderCreate, shift_id: int):
             hall_name=order.hall_name,
             comments=order.comments,
             total_price=order.total_price,
-            
         )
         session.add(db_order)
-        await session.flush()  # чтобы получить db_order.id до commit
+        await session.flush()
 
         # Добавляем позиции заказа
         for item in order.items:
@@ -188,10 +204,19 @@ async def create_order(order: schem.OrderCreate, shift_id: int):
             )
             session.add(db_item)
 
-        await session.commit()
-        await session.refresh(db_order)
+        # ОБНОВЛЯЕМ ДАННЫЕ СМЕНЫ через UPDATE запрос
+        await session.execute(
+            update(Shift)
+            .where(Shift.id == shift_id)
+            .values(
+                total_cash_register=Shift.total_cash_register + order.total_price,
+                order_count=Shift.order_count + 1
+            )
+        )
 
-        # Загружаем заказ вместе с items
+        await session.commit()
+        
+        # Перезагружаем заказ с items
         result = await session.execute(
             select(Order)
             .options(selectinload(Order.items))
@@ -200,27 +225,53 @@ async def create_order(order: schem.OrderCreate, shift_id: int):
         created_order = result.scalars().first()
 
         return schem.OrderResponse.model_validate(created_order)
-    
+
+
+
 @router.patch("/orders/{order_id}")
 async def update_order(order_id: int, data: schem.OrderUpdate):
     async with async_session() as session:
         db_order = await session.scalar(
             select(Order).options(selectinload(Order.items)).where(Order.id == order_id)
         )
+
         if not db_order:
             raise HTTPException(status_code=404, detail="Order not found")
+        status = "waiting"
+        if data.is_done is not None or data.is_paid is not None:
+            if data.is_done:
+                status = "reserved"
+            if data.is_paid:
+                status = "occupied"
+        await session.execute(
+                update(Table)
+                .where(Table.id == db_order.table_id)
+                .values(
+                    status=status
+                )
+            )
+        if data.total_price is not None or data.tips is not None:
+            new_total_price = data.total_price if data.total_price is not None else db_order.total_price
+            new_tips = data.tips if data.tips is not None else db_order.tips
 
-        # --- Обновляем только переданные поля заказа ---
+            await session.execute(
+                update(Shift)
+                .where(Shift.id == db_order.shift_id)
+                .values(
+                    total_cash_register=Shift.total_cash_register - db_order.total_price + new_total_price,
+                    total_tips=Shift.total_tips - db_order.tips + new_tips
+                )
+            )
         for field, value in data.model_dump(exclude_unset=True).items():
             setattr(db_order, field, value)
 
-        # --- Если нужно обновить items ---
+        
         if hasattr(data, "items") and data.items is not None:
-            # Удаляем старые позиции
+            
             await session.execute(delete(OrderItem).where(OrderItem.order_id == db_order.id))
 
-            # Добавляем новые
-            total_price = 0
+            
+            
             for item in data.items:
                 new_item = OrderItem(
                     order_id=db_order.id,
@@ -245,7 +296,15 @@ async def delete_order(order_id: int):
         db_order = await session.scalar(select(Order).where(Order.id == order_id))
         if not db_order:
             raise HTTPException(status_code=404, detail="Order not found")
-
+        await session.execute(
+                update(Shift)
+                .where(Shift.id == db_order.shift_id)
+                .values(
+                    total_cash_register=Shift.total_cash_register - db_order.total_price,
+                    total_tips=Shift.total_tips - db_order.tips,
+                    order_count=Shift.order_count - 1
+                )
+            )
         await session.delete(db_order)
         await session.commit()
 
@@ -266,14 +325,10 @@ async def create_hall(hall: schem.HallCreate, user_id: int):
         await session.refresh(db_hall)
 
         # Подгружаем зал вместе с его столами
-        result = await session.execute(
-            select(Hall)
-            .options(selectinload(Hall.tables))
-            .where(Hall.id == db_hall.id)
-        )
-        hall_with_tables = result.scalars().first()
+        
+        
 
-        return schem.HallResponse.model_validate(hall_with_tables)
+        return schem.HallResponse.model_validate(db_hall)
 
 @router.patch("/halls/{hall_id}")
 async def update_hall(hall_id: int, hall: schem.HallUpdate):
@@ -318,11 +373,7 @@ async def create_table(table: schem.TableCreate, hall_id: int):
         session.add(db_table)
         await session.commit()
         await session.refresh(db_table)
-        result = await session.execute(
-            select(Table)
-            .where(Table.id == db_table.id)
-        )
-        return schem.TableResponse.model_validate(result.scalars().first())
+        return schem.TableResponse.model_validate(db_table)
 
 @router.patch("/tables/{table_id}")
 async def update_table(table_id: int, table: schem.TableUpdate):

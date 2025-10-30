@@ -9,7 +9,7 @@
   "service_percent": 10,
   "shift_type": "fixed",
   "pay_for_shift": 1500.00,
-  "shifts": [
+  "shifs": [
     {
       "id": 1,
       "user_id": 1,

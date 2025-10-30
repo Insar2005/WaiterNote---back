@@ -1,10 +1,9 @@
-from sqlalchemy import ForeignKey, String, Float, BigInteger, Text, Integer, Boolean, Numeric, TIMESTAMP
+from sqlalchemy import ForeignKey, String, Float, BigInteger, Text, Integer, Boolean, Numeric, TIMESTAMP, text
 from sqlalchemy.orm import Mapped, DeclarativeBase, mapped_column, relationship
 from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
 from typing import Optional, List
 from datetime import datetime, timezone as timeZone
-import asyncpg
-import asyncio
+
 import ssl, os
 
 
@@ -34,21 +33,26 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tg_id: Mapped[int] = mapped_column(BigInteger, unique=True)
-    username: Mapped[Optional[str]] = mapped_column(String(100))
+    username: Mapped[str] = mapped_column(String(100))
     language: Mapped[str] = mapped_column(String(10), default="ru")
-    place_work_title: Mapped[Optional[str]] = mapped_column(String(255))
+    place_work_title: Mapped[str] = mapped_column(String(255), default="Waiter Note")
     timezone: Mapped[str] = mapped_column(String(100), default="Europe/Moscow")
     currency: Mapped[str] = mapped_column(String(10), default="RUB")
     service_percent: Mapped[int] = mapped_column(Integer, default=0)
     shift_type: Mapped[str] = mapped_column(String(20), default="fixed")
     pay_for_shift: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
 
-    shifts: Mapped[Optional[List["Shift"]]] = relationship(back_populates="user", cascade="all, delete")
-    halls: Mapped[Optional[List["Hall"]]] = relationship(back_populates="user", cascade="all, delete")
-    menu: Mapped[Optional[List["MenuCategory"]]] = relationship(back_populates="user", cascade="all, delete")
+    shifts: Mapped[List["Shift"]] = relationship(back_populates="user", cascade="all, delete")
+    halls: Mapped[List["Hall"]] = relationship(back_populates="user", cascade="all, delete")
+    menu: Mapped[List["MenuCategory"]] = relationship(back_populates="user", cascade="all, delete")
 
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, default=datetime.now(tz=timeZone.utc))
-    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP, default=datetime.now(tz=timeZone.utc))
+    created_at: Mapped[int] = mapped_column(Integer, default=int(datetime.now(timeZone.utc).timestamp()))
+    updated_at: Mapped[int] = mapped_column(
+    Integer, 
+    default=0,
+    server_default=text('0'),
+    onupdate=text('CAST(EXTRACT(epoch FROM NOW()) AS INTEGER)')
+)
 
 
 class Shift(Base):
@@ -56,19 +60,19 @@ class Shift(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    start_time: Mapped[datetime] = mapped_column(TIMESTAMP, default=datetime.now(tz=timeZone.utc))
+    start_time: Mapped[int] = mapped_column(Integer, default=int(datetime.now(tz=timeZone.utc).timestamp()))
     is_closed: Mapped[bool] = mapped_column(Boolean, default=False)
-    end_time: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP, default=datetime.now(tz=timeZone.utc))
-    place_work_title: Mapped[Optional[str]] = mapped_column(String(255))
-    currency: Mapped[Optional[str]] = mapped_column(String(10))
-    service_percent: Mapped[Optional[int]]
-    shift_type: Mapped[Optional[str]]
-    pay_for_shift: Mapped[Optional[float]] = mapped_column(Numeric(10, 2))
-    total_pay_for_shift: Mapped[Optional[float]] = mapped_column(Numeric(10, 2))
-    total_tips: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), default=0)
-    total_cash_register: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), default=0)
-    order_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)
-    duration: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    end_time: Mapped[int] = mapped_column(Integer, default=0)
+    place_work_title: Mapped[str] = mapped_column(String(255), default="Waiter Note")
+    currency: Mapped[str] = mapped_column(String(10), default="USD")
+    service_percent: Mapped[int] = mapped_column(Integer, default=0)
+    shift_type: Mapped[str] = mapped_column(String(20), default="fixed")
+    pay_for_shift: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    total_pay_for_shift: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    total_tips: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    total_cash_register: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    order_count: Mapped[int] = mapped_column(Integer, default=0)
+    duration: Mapped[int] = mapped_column(Integer, default=0)
 
     user: Mapped["User"] = relationship(back_populates="shifts")
     orders: Mapped[List["Order"]] = relationship(back_populates="shift", cascade="all, delete")
@@ -91,17 +95,17 @@ class Table(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     hall_id: Mapped[int] = mapped_column(ForeignKey("halls.id", ondelete="CASCADE"))
-    number: Mapped[int]
-    x: Mapped[int]
-    y: Mapped[int]
+    number: Mapped[int] =mapped_column(Integer)
+    x: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    y: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
     width: Mapped[int] = mapped_column(Integer, default=100)
     height: Mapped[int] = mapped_column(Integer, default=100)
     rotation: Mapped[int] = mapped_column(Integer, default=0)
     border_radius: Mapped[int] = mapped_column(Integer, default=15)
-    status: Mapped[str] = mapped_column(String(20), default="free")
+    status: Mapped[str] = mapped_column(String(20), default="free") # free, waiting, occupied, reserved
 
     hall: Mapped["Hall"] = relationship(back_populates="tables")
-    current_order: Mapped[Optional["Order"]] = relationship(back_populates="table", uselist=False) # uselist это для one-to-one отношений 
+    
 
 
 class MenuCategory(Base):
@@ -137,18 +141,24 @@ class Order(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     shift_id: Mapped[int] = mapped_column(ForeignKey("shifts.id", ondelete="CASCADE"))
     table_id: Mapped[Optional[int]] = mapped_column(ForeignKey("tables.id", ondelete="SET NULL"))
-    table_number: Mapped[Optional[int]] = mapped_column(Integer)
-    hall_name: Mapped[Optional[str]] = mapped_column(String(100))
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, default=datetime.now(tz=timeZone.utc))
-    closed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP, default=datetime.now(tz=timeZone.utc))
-    comments: Mapped[Optional[str]] = mapped_column(Text)
-    tips: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), default=0)
+    table_number: Mapped[int] = mapped_column(Integer, default=None)
+    hall_name: Mapped[str] = mapped_column(String(100), default=None)
+    created_at: Mapped[int] = mapped_column(Integer, default=int(datetime.now(tz=timeZone.utc).timestamp()))
+    updated_at: Mapped[int] = mapped_column(
+    Integer, 
+    default=0,
+    server_default=text('0'),
+    onupdate=text('CAST(EXTRACT(epoch FROM NOW()) AS INTEGER)')
+)
+    closed_at: Mapped[int] = mapped_column(Integer, default=0)
+    comments: Mapped[str] = mapped_column(Text, default=None)
+    tips: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
     total_price: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
     is_paid: Mapped[bool] = mapped_column(Boolean, default=False)
     is_done: Mapped[bool] = mapped_column(Boolean, default=False)
 
     shift: Mapped["Shift"] = relationship(back_populates="orders")
-    table: Mapped["Table"] = relationship(back_populates="current_order")
+    
     items: Mapped[List["OrderItem"]] = relationship(back_populates="order", cascade="all, delete")
 
 
@@ -160,8 +170,9 @@ class OrderItem(Base):
     menu_item_id: Mapped[Optional[int]] = mapped_column(ForeignKey("menu_items.id", ondelete="SET NULL"))
     title: Mapped[str] = mapped_column(String(150))
     price: Mapped[float] = mapped_column(Numeric(10, 2))
+    total_price: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
     quantity: Mapped[int] = mapped_column(Integer, default=1)
-    comment: Mapped[Optional[str]] = mapped_column(Text)
+    comment: Mapped[Optional[str]] = mapped_column(Text, default=None)
 
     order: Mapped["Order"] = relationship(back_populates="items")
     # menu_item: Mapped["MenuItem"] = relationship(back_populates="order_items")
@@ -170,6 +181,7 @@ class OrderItem(Base):
 # === ИНИЦИАЛИЗАЦИЯ БД ===
 async def init_db():
     async with engine.begin() as conn:
+        # await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
         print("✅ Tables created successfully")
 
