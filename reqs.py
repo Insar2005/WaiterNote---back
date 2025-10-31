@@ -1,9 +1,8 @@
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
+from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Optional
 
-# Базовые схемы
 class MenuItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     category_id: int
     title: str
@@ -13,13 +12,15 @@ class MenuItemResponse(BaseModel):
     position: int
 
 class MenuCategoryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     user_id: int
     title: str
     position: int
-    items: List[MenuItemResponse]
+    items: List[MenuItemResponse] = Field(default_factory=list)
 
 class TableResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     hall_id: int
     number: int
@@ -32,13 +33,15 @@ class TableResponse(BaseModel):
     status: str
 
 class HallResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     user_id: int
     name: str
     position: int
-    tables: List[TableResponse]
+    tables: List[TableResponse] = Field(default_factory=list)
 
 class OrderItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     order_id: int
     menu_item_id: Optional[int]
@@ -48,6 +51,7 @@ class OrderItemResponse(BaseModel):
     comment: Optional[str]
 
 class OrderResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     shift_id: int
     table_id: Optional[int]
@@ -55,20 +59,21 @@ class OrderResponse(BaseModel):
     hall_name: Optional[str]
     created_at: int
     updated_at: int
-    closed_at: int
+    closed_at: Optional[int]
     comments: Optional[str]
     tips: Optional[float]
     total_price: float
     is_paid: bool
     is_done: bool
-    items: List[OrderItemResponse]
+    items: List[OrderItemResponse] = Field(default_factory=list)
 
 class ShiftResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     user_id: int
     start_time: int
     is_closed: bool
-    end_time: int
+    end_time: Optional[int]
     place_work_title: str
     currency: str
     service_percent: int
@@ -79,9 +84,10 @@ class ShiftResponse(BaseModel):
     total_cash_register: float
     order_count: int
     duration: int
-    orders: Optional[List[OrderResponse]]
+    orders: List[OrderResponse] = Field(default_factory=list)
 
 class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     tg_id: int
     username: str
@@ -94,10 +100,9 @@ class UserResponse(BaseModel):
     pay_for_shift: float
     created_at: int
     updated_at: int
-    shifts: List[ShiftResponse] = []
-    menu: List[MenuCategoryResponse] = []
-    halls: List[HallResponse] = []
-
+    shifts: List[ShiftResponse] = Field(default_factory=list)
+    menu: List[MenuCategoryResponse] = Field(default_factory=list)
+    halls: List[HallResponse] = Field(default_factory=list)
 
 
 # Схемы для создания записей

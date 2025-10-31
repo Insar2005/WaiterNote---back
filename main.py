@@ -5,9 +5,10 @@ from sqlalchemy.orm import selectinload, with_loader_criteria
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from models import engine, init_db, User, Hall, Table, Shift, Order, MenuCategory, MenuItem, OrderItem, async_session
-
+import json
+from datetime import datetime
 import reqs as schem
-
+from decimal import Decimal
 @asynccontextmanager
 async def lifespan(app:FastAPI):
     await init_db()
@@ -35,18 +36,28 @@ async def get_user_data(tg_id: int):
         result = await session.execute(
             select(User)
             .options(
-                selectinload(User.shifts).selectinload(Shift.orders),
-                selectinload(User.halls).selectinload(Hall.tables),
-                selectinload(User.menu).selectinload(MenuCategory.items),
-                with_loader_criteria(Shift, lambda cls: cls.is_closed == False)
+                # ✅ подгружаем только активную смену
+                selectinload(User.shifts)
+                .selectinload(Shift.orders)
+                .selectinload(Order.items),
+                
+                selectinload(User.halls)
+                .selectinload(Hall.tables),
+                
+                selectinload(User.menu)
+                .selectinload(MenuCategory.items),
+
+                # ✅ фильтруем только незакрытые смены
+                with_loader_criteria(Shift, lambda Shift: Shift.is_closed == False)
             )
             .where(User.tg_id == tg_id)
         )
+        
         user = result.scalars().first()
-        print(f" ВООООООТ {user}")
+        
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-        
+
         return schem.UserResponse.model_validate(user)
 
 @router.patch("/{user_id}")

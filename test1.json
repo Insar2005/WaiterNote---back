@@ -1,0 +1,17 @@
+{
+  "id": 5,
+  "username": "insar",
+  "place_work_title": "Бургерная",
+  "shift_type": "fixed",
+  "created_at": 1761865967,
+  "tg_id": 821395808,
+  "language": "ru",
+  "timezone": "Asia/Bishkek",
+  "currency": "RUB",
+  "service_percent": 15,
+  "pay_for_shift": 3000.0,
+  "updated_at": 0,
+  "halls": {},
+  "menu": {},
+  "shifts": {}
+}
