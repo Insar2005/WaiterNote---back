@@ -79,7 +79,7 @@ class ShiftResponse(BaseModel):
     total_cash_register: float
     order_count: int
     duration: int
-    orders: List[OrderResponse]
+    orders: Optional[List[OrderResponse]]
 
 class UserResponse(BaseModel):
     id: int

@@ -79,6 +79,9 @@ async def create_user(user: schem.UserCreate):
         session.add(db_user)
         await session.commit()
         await session.refresh(db_user)
+        db_user.shifts = []
+        db_user.menu = []
+        db_user.halls = []
         return schem.UserResponse.model_validate(db_user)
 
 @router.post("/{user_id}/shift/create")
@@ -99,6 +102,7 @@ async def create_shift(shift: schem.ShiftCreate, user_id: int):
         session.add(db_shift)
         await session.commit()
         await session.refresh(db_shift)
+        db_shift.orders = []
         
         # У новой смены заказов точно нет - возвращаем как есть
         return schem.ShiftResponse.model_validate(db_shift)
@@ -295,7 +299,7 @@ async def create_hall(hall: schem.HallCreate, user_id: int):
         await session.refresh(db_hall)
 
         # Подгружаем зал вместе с его столами
-        
+        db_hall.tables=[]
         
 
         return schem.HallResponse.model_validate(db_hall)
