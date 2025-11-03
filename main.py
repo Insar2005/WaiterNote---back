@@ -29,36 +29,39 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 @router.get("/{tg_id}")
 async def get_user_data(tg_id: int):
     async with async_session() as session:
         result = await session.execute(
             select(User)
             .options(
-                # ✅ подгружаем только активную смену
                 selectinload(User.shifts)
-                .selectinload(Shift.orders)
-                .selectinload(Order.items),
+                    .selectinload(Shift.orders)
+                    .selectinload(Order.items),
                 
                 selectinload(User.halls)
-                .selectinload(Hall.tables),
+                    .selectinload(Hall.tables),
                 
                 selectinload(User.menu)
-                .selectinload(MenuCategory.items),
-
-                # ✅ фильтруем только незакрытые смены
-                with_loader_criteria(Shift, lambda Shift: Shift.is_closed == False)
+                    .selectinload(MenuCategory.items),
+                
+                # фильтр только к Shifts
+                with_loader_criteria(
+                    Shift,
+                    lambda Shift: Shift.is_closed == False
+                )
             )
             .where(User.tg_id == tg_id)
         )
-        
+
         user = result.scalars().first()
-        
+
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        return schem.UserResponse.model_validate(user)
+        # ⭐ Преобразуем ORM → dict, чтобы исключить lazy-load
+        return schem.UserResponse.model_validate(user, from_attributes=True)
+
 
 @router.patch("/{user_id}")
 async def update_user(user_id: int, user: schem.UserUpdate):
