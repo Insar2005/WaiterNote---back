@@ -90,11 +90,12 @@ async def create_user(user: schem.UserCreate):
             shift_type=user.shift_type,
             pay_for_shift=user.pay_for_shift
         )
+        
         session.add(db_user)
         await session.commit()
-        await session.refresh(db_user)
-        
-        return schem.UserResponse.model_validate(db_user)
+        await session.refresh(db_user, attribute_names=["shifts", "halls", "menu"])
+
+        return schem.UserResponse.model_validate(db_user, from_attributes=True)
 
 @router.post("/{user_id}/shift/create")
 async def create_shift(shift: schem.ShiftCreate, user_id: int):
@@ -113,16 +114,20 @@ async def create_shift(shift: schem.ShiftCreate, user_id: int):
         )
         session.add(db_shift)
         await session.commit()
-        await session.refresh(db_shift)
+        await session.refresh(db_shift,attribute_names=["orders"])
         
         
-        # У новой смены заказов точно нет - возвращаем как есть
-        return schem.ShiftResponse.model_validate(db_shift)
+       
+        return {"id": db_shift.id}
 @router.get("/shifts")
 async def get_shifts_by_timestamp(min: int, max: int):
     async with async_session() as session:
         result = await session.execute(
             select(Shift)
+            .options(
+                selectinload(Shift.orders)
+                .selectinload(Order.items)  # если нужны items внутри заказов
+            )
             .where(
                 Shift.is_closed.is_(True),
                 Shift.start_time >= min,
@@ -130,9 +135,13 @@ async def get_shifts_by_timestamp(min: int, max: int):
             )
             .order_by(Shift.start_time.desc())
         )
-        shifts = result.scalars().all()
-        return [schem.ShiftResponse.model_validate(shift) for shift in shifts]
 
+        shifts = result.scalars().all()
+
+        return [
+            schem.ShiftResponse.model_validate(shift, from_attributes=True)
+            for shift in shifts
+        ]
 @router.patch("/shifts/{shift_id}")
 async def update_shift(shift_id: int, shift: schem.ShiftUpdate):
     async with async_session() as session:
@@ -314,7 +323,7 @@ async def create_hall(hall: schem.HallCreate, user_id: int):
         
         
 
-        return schem.HallResponse.model_validate(db_hall)
+        return {"id": db_hall.id}
 
 @router.patch("/halls/{hall_id}")
 async def update_hall(hall_id: int, hall: schem.HallUpdate):
@@ -359,7 +368,7 @@ async def create_table(table: schem.TableCreate, hall_id: int):
         session.add(db_table)
         await session.commit()
         await session.refresh(db_table)
-        return schem.TableResponse.model_validate(db_table)
+        return {"id": db_table.id}
 
 @router.patch("/tables/{table_id}")
 async def update_table(table_id: int, table: schem.TableUpdate):
@@ -394,11 +403,8 @@ async def create_menu_category(category: schem.MenuCategoryCreate, user_id: int)
         session.add(db_category)
         await session.commit()
         await session.refresh(db_category)
-        result = await session.execute(
-            select(MenuCategory).options(selectinload(MenuCategory.items))
-            .where(MenuCategory.id == db_category.id)
-        )
-        return schem.MenuCategoryResponse.model_validate(result.scalars().first())
+        
+        return {"id": db_category.id}
     
 @router.patch("/menu/{category_id}")
 async def update_menu_category(category_id: int, category: schem.MenuCategoryUpdate):
@@ -443,11 +449,8 @@ async def create_menu_item(item: schem.MenuItemCreate, category_id: int):
         session.add(db_item)
         await session.commit()
         await session.refresh(db_item)
-        result = await session.execute(
-            select(MenuItem)
-            .where(MenuItem.id == db_item.id)
-        )
-        return schem.MenuItemResponse.model_validate(result.scalars().first())
+       
+        return {"id":db_item.id}
 
 @router.patch("/items/{item_id}")
 async def update_menu_item(item_id: int, item: schem.MenuItemUpdate):
