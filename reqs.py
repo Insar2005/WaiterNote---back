@@ -1,10 +1,10 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 class MenuItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: int
-    category_id: int
+    id: str
+    category_id: str
     title: str
     description: Optional[str]
     portion: Optional[str]
@@ -13,7 +13,7 @@ class MenuItemResponse(BaseModel):
 
 class MenuCategoryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: int
+    id: str
     user_id: int
     title: str
     position: int
@@ -21,8 +21,8 @@ class MenuCategoryResponse(BaseModel):
 
 class TableResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: int
-    hall_id: int
+    id: str
+    hall_id: str
     number: int
     x: float
     y: float
@@ -31,10 +31,11 @@ class TableResponse(BaseModel):
     rotation: int
     border_radius: int
     status: str
+    order_id: Optional[str] = None
 
 class HallResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: int
+    id: str
     user_id: int
     name: str
     position: int
@@ -42,8 +43,8 @@ class HallResponse(BaseModel):
 
 class OrderItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: int
-    order_id: int
+    id: str
+    order_id: str
     menu_item_id: Optional[int]
     title: str
     price: float
@@ -52,8 +53,8 @@ class OrderItemResponse(BaseModel):
 
 class OrderResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: int
-    shift_id: int
+    id: str
+    shift_id: str
     table_id: Optional[int]
     table_number: Optional[int]
     hall_name: Optional[str]
@@ -69,7 +70,7 @@ class OrderResponse(BaseModel):
 
 class ShiftResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: int
+    id: str
     user_id: int
     start_time: int
     is_closed: bool
@@ -108,7 +109,8 @@ class UserResponse(BaseModel):
 # Схемы для создания записей
 
 class MenuItemCreate(BaseModel):
-    category_id: int
+    id:str
+    category_id: str
     title: str
     description: Optional[str] = None
     portion: Optional[str] = None
@@ -116,12 +118,14 @@ class MenuItemCreate(BaseModel):
     position: int = 0
 
 class MenuCategoryCreate(BaseModel):
+    id:str
     title: str
     position: int = 0
     items: Optional[List[MenuItemCreate]] = []
 
 class TableCreate(BaseModel):
-    hall_id: int
+    id:str
+    hall_id: str
     number: int
     x: float = 0
     y: float = 0
@@ -132,21 +136,24 @@ class TableCreate(BaseModel):
     status: str = "free"
 
 class HallCreate(BaseModel):
+    id:str
     name: str
     position: int = 0
     tables: Optional[List[TableCreate]] = []
 
 class OrderItemCreate(BaseModel):
-    order_id: int
-    menu_item_id: Optional[int] = None
+    id:str
+    order_id: str
+    menu_item_id: Optional[str] = None
     title: str
     price: float
     quantity: int = 1
     comment: Optional[str] = None
 
 class OrderCreate(BaseModel):
-    shift_id: int
-    table_id: Optional[int] = None
+    id:str
+    shift_id: str
+    table_id: Optional[str] = None
     table_number: Optional[int] = None
     hall_name: Optional[str] = None
     comments: Optional[str] = None
@@ -154,9 +161,9 @@ class OrderCreate(BaseModel):
     items: List[OrderItemCreate]
 
 class ShiftCreate(BaseModel):
-    user_id: int
-    start_time: int
+    id:str
 
+    start_time: int
     place_work_title: str = "Waiter Note"
     currency: str = "USD"
     service_percent: int = 0
@@ -190,6 +197,7 @@ class MenuCategoryUpdate(BaseModel):
     position: Optional[int] = None
 
 class TableUpdate(BaseModel):
+    order_id:Optional[str] = None
     number: Optional[int] = None
     x: Optional[float] = None
     y: Optional[float] = None
@@ -246,3 +254,10 @@ class UserUpdate(BaseModel):
     service_percent: Optional[int] = None
     shift_type: Optional[str] = None
     pay_for_shift: Optional[float] = None
+
+class SyncOperation(BaseModel):
+    id: str                    # локальный id операции (для фронта)
+    user_id: int               # <-- добавляем
+    entity: str                # hall, table, item и т.д.
+    action: Literal["add", "update", "delete"]
+    payload: dict    

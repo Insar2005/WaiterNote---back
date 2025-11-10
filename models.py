@@ -58,7 +58,7 @@ class User(Base):
 class Shift(Base):
     __tablename__ = "shifts"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[str] = mapped_column(String(21), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     start_time: Mapped[int] = mapped_column(Integer, default=int(datetime.now(tz=timeZone.utc).timestamp()))
     is_closed: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -81,7 +81,7 @@ class Shift(Base):
 class Hall(Base):
     __tablename__ = "halls"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[str] = mapped_column(String(21), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(100))
     position: Mapped[int] = mapped_column(Integer, default=0)
@@ -93,8 +93,9 @@ class Hall(Base):
 class Table(Base):
     __tablename__ = "tables"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    hall_id: Mapped[int] = mapped_column(ForeignKey("halls.id", ondelete="CASCADE"))
+    id: Mapped[str] = mapped_column(String(21), primary_key=True)
+    order_id: Mapped[Optional[str]] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"))
+    hall_id: Mapped[str] = mapped_column(ForeignKey("halls.id", ondelete="CASCADE"))
     number: Mapped[int] =mapped_column(Integer)
     x: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
     y: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
@@ -111,7 +112,7 @@ class Table(Base):
 class MenuCategory(Base):
     __tablename__ = "menu_categories"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[str] = mapped_column(String(21), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     title: Mapped[str] = mapped_column(String(100))
     position: Mapped[int] = mapped_column(Integer, default=0)
@@ -123,11 +124,11 @@ class MenuCategory(Base):
 class MenuItem(Base):
     __tablename__ = "menu_items"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    category_id: Mapped[int] = mapped_column(ForeignKey("menu_categories.id", ondelete="CASCADE"))
+    id: Mapped[str] = mapped_column(String(21), primary_key=True)
+    category_id: Mapped[str] = mapped_column(ForeignKey("menu_categories.id", ondelete="CASCADE"))
     title: Mapped[str] = mapped_column(String(150))
-    description: Mapped[Optional[str]] = mapped_column(Text)
-    portion: Mapped[Optional[str]] = mapped_column(String(50))
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    portion: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     price: Mapped[float] = mapped_column(Numeric(10, 2))
     position: Mapped[int] = mapped_column(Integer, default=0)
 
@@ -138,9 +139,9 @@ class MenuItem(Base):
 class Order(Base):
     __tablename__ = "orders"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    shift_id: Mapped[int] = mapped_column(ForeignKey("shifts.id", ondelete="CASCADE"))
-    table_id: Mapped[Optional[int]] = mapped_column(ForeignKey("tables.id", ondelete="SET NULL"))
+    id: Mapped[str] = mapped_column(String(21), primary_key=True)
+    shift_id: Mapped[str] = mapped_column(ForeignKey("shifts.id", ondelete="CASCADE"))
+    table_id: Mapped[Optional[str]] = mapped_column(ForeignKey("tables.id", ondelete="SET NULL"))
     table_number: Mapped[int] = mapped_column(Integer, default=None)
     hall_name: Mapped[str] = mapped_column(String(100), default=None)
     created_at: Mapped[int] = mapped_column(Integer, default=int(datetime.now(tz=timeZone.utc).timestamp()))
@@ -165,9 +166,9 @@ class Order(Base):
 class OrderItem(Base):
     __tablename__ = "order_items"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    order_id: Mapped[Optional[int]] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"))
-    menu_item_id: Mapped[Optional[int]] = mapped_column(ForeignKey("menu_items.id", ondelete="SET NULL"))
+    id: Mapped[str] = mapped_column(String(21), primary_key=True)
+    order_id: Mapped[Optional[str]] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"))
+    menu_item_id: Mapped[Optional[str]] = mapped_column(ForeignKey("menu_items.id", ondelete="SET NULL"))
     title: Mapped[str] = mapped_column(String(150))
     price: Mapped[float] = mapped_column(Numeric(10, 2))
     total_price: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
@@ -181,7 +182,7 @@ class OrderItem(Base):
 # === ИНИЦИАЛИЗАЦИЯ БД ===
 async def init_db():
     async with engine.begin() as conn:
-        # await conn.run_sync(Base.metadata.drop_all)
+        #await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
         print("✅ Tables created successfully")
 

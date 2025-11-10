@@ -100,17 +100,18 @@ async def create_user(user: schem.UserCreate):
 @router.post("/{user_id}/shift/create")
 async def create_shift(shift: schem.ShiftCreate, user_id: int):
     async with async_session() as session:
-        user = await session.scalar(select(User).where(User.id == user_id))
+        # user = await session.scalar(select(User).where(User.id == user_id))
         
         # Создаём смену
         db_shift = Shift(
+            id = shift.id,
             user_id=user_id,
             start_time=shift.start_time,
-            place_work_title=user.place_work_title,
-            currency=user.currency,
-            service_percent=user.service_percent,
-            shift_type=user.shift_type,
-            pay_for_shift=user.pay_for_shift
+            place_work_title=shift.place_work_title,
+            currency=shift.currency,
+            service_percent=shift.service_percent,
+            shift_type=shift.shift_type,
+            pay_for_shift=shift.pay_for_shift
         )
         session.add(db_shift)
         await session.commit()
@@ -143,7 +144,7 @@ async def get_shifts_by_timestamp(min: int, max: int):
             for shift in shifts
         ]
 @router.patch("/shifts/{shift_id}")
-async def update_shift(shift_id: int, shift: schem.ShiftUpdate):
+async def update_shift(shift_id: str, shift: schem.ShiftUpdate):
     async with async_session() as session:
         db_shift = await session.scalar(select(Shift).where(Shift.id == shift_id))
         if not db_shift:
@@ -156,7 +157,7 @@ async def update_shift(shift_id: int, shift: schem.ShiftUpdate):
         return {"success": True}
 
 @router.delete("/shifts/{shift_id}")
-async def delete_shift(shift_id: int):
+async def delete_shift(shift_id: str):
     async with async_session() as session:
         db_shift = await session.scalar(select(Shift).where(Shift.id == shift_id))
         if not db_shift:
@@ -168,7 +169,7 @@ async def delete_shift(shift_id: int):
         return {"success": True}
 
 @router.post("/{shift_id}/orders")
-async def create_order(order: schem.OrderCreate, shift_id: int):
+async def create_order(order: schem.OrderCreate, shift_id: str):
     async with async_session() as session:
       
         shift = await session.scalar(select(Shift).where(Shift.id == shift_id))
@@ -177,6 +178,7 @@ async def create_order(order: schem.OrderCreate, shift_id: int):
         
        
         db_order = Order(
+            id=order.id,
             shift_id=shift_id,
             table_id=order.table_id,
             table_number=order.table_number,
@@ -190,6 +192,7 @@ async def create_order(order: schem.OrderCreate, shift_id: int):
         
         for item in order.items:
             db_item = OrderItem(
+                id = item.id,
                 order_id=db_order.id,
                 menu_item_id=item.menu_item_id,
                 title=item.title,
@@ -224,7 +227,7 @@ async def create_order(order: schem.OrderCreate, shift_id: int):
 
 
 @router.patch("/orders/{order_id}")
-async def update_order(order_id: int, data: schem.OrderUpdate):
+async def update_order(order_id: str, data: schem.OrderUpdate):
     async with async_session() as session:
         db_order = await session.scalar(
             select(Order).options(selectinload(Order.items)).where(Order.id == order_id)
@@ -286,7 +289,7 @@ async def update_order(order_id: int, data: schem.OrderUpdate):
         return {"success": True}
 
 @router.delete("/orders/{order_id}")
-async def delete_order(order_id: int):
+async def delete_order(order_id: str):
     async with async_session() as session:
         db_order = await session.scalar(select(Order).where(Order.id == order_id))
         if not db_order:
@@ -307,10 +310,12 @@ async def delete_order(order_id: int):
 
 @router.post("/{user_id}/halls")
 async def create_hall(hall: schem.HallCreate, user_id: int):
+    print(schem.HallCreate.model_validate(hall))
     async with async_session() as session:
         
         # Создаём зал
         db_hall = Hall(
+            id = hall.id,
             user_id=user_id,
             name=hall.name,
             position=hall.position
@@ -326,7 +331,7 @@ async def create_hall(hall: schem.HallCreate, user_id: int):
         return {"id": db_hall.id}
 
 @router.patch("/halls/{hall_id}")
-async def update_hall(hall_id: int, hall: schem.HallUpdate):
+async def update_hall(hall_id: str, hall: schem.HallUpdate):
     async with async_session() as session:
         db_hall = await session.scalar(select(Hall).where(Hall.id == hall_id))
         if not db_hall:
@@ -340,7 +345,7 @@ async def update_hall(hall_id: int, hall: schem.HallUpdate):
         return {"success": True}
     
 @router.delete("/halls/{hall_id}")
-async def delete_hall(hall_id: int):
+async def delete_hall(hall_id: str):
     async with async_session() as session:
         db_hall = await session.scalar(select(Hall).where(Hall.id == hall_id))
         if not db_hall:
@@ -351,10 +356,11 @@ async def delete_hall(hall_id: int):
 
         return {"success": True}
 @router.post("/{hall_id}/tables")
-async def create_table(table: schem.TableCreate, hall_id: int):
+async def create_table(table: schem.TableCreate, hall_id: str):
     async with async_session() as session:
         
         db_table = Table(
+            id = table.id,
             hall_id=hall_id,
             number=table.number,
             x=table.x,
@@ -371,7 +377,7 @@ async def create_table(table: schem.TableCreate, hall_id: int):
         return {"id": db_table.id}
 
 @router.patch("/tables/{table_id}")
-async def update_table(table_id: int, table: schem.TableUpdate):
+async def update_table(table_id: str, table: schem.TableUpdate):
     async with async_session() as session:
         db_table = await session.scalar(select(Table).where(Table.id == table_id))
         if not db_table:
@@ -385,7 +391,7 @@ async def update_table(table_id: int, table: schem.TableUpdate):
         return {"success": True}
 
 @router.delete("/tables/{table_id}")
-async def delete_table(table_id: int):
+async def delete_table(table_id: str):
     async with async_session() as session:
         db_table = await session.scalar(select(Table).where(Table.id == table_id))
         if not db_table:
@@ -399,7 +405,7 @@ async def delete_table(table_id: int):
 @router.post("/{user_id}/menu")
 async def create_menu_category(category: schem.MenuCategoryCreate, user_id: int):
     async with async_session() as session:
-        db_category = MenuCategory(user_id=user_id, title=category.title, position=category.position)
+        db_category = MenuCategory(id = category.id, user_id=user_id, title=category.title, position=category.position)
         session.add(db_category)
         await session.commit()
         await session.refresh(db_category)
@@ -407,7 +413,7 @@ async def create_menu_category(category: schem.MenuCategoryCreate, user_id: int)
         return {"id": db_category.id}
     
 @router.patch("/menu/{category_id}")
-async def update_menu_category(category_id: int, category: schem.MenuCategoryUpdate):
+async def update_menu_category(category_id: str, category: schem.MenuCategoryUpdate):
     async with async_session() as session:
         db_category = await session.scalar(select(MenuCategory).where(MenuCategory.id == category_id))
         if not db_category:
@@ -421,7 +427,7 @@ async def update_menu_category(category_id: int, category: schem.MenuCategoryUpd
         return {"success": True}
 
 @router.delete("/menu/{category_id}")
-async def delete_menu_category(category_id: int):
+async def delete_menu_category(category_id: str):
     async with async_session() as session:
         db_category = await session.scalar(select(MenuCategory).where(MenuCategory.id == category_id))
         if not db_category:
@@ -433,13 +439,14 @@ async def delete_menu_category(category_id: int):
         return {"success": True}
 
 @router.post("/{category_id}/items")
-async def create_menu_item(item: schem.MenuItemCreate, category_id: int):
+async def create_menu_item(item: schem.MenuItemCreate, category_id: str):
     async with async_session() as session:
         result = await session.execute(select(MenuCategory).where(MenuCategory.id == category_id))
         category = result.scalars().first()
         if not category:
             raise HTTPException(status_code=404, detail="Category not found")
         db_item = MenuItem(
+            id = item.id,
             category_id=category.id,
             title=item.title,
             description=item.description,
@@ -453,7 +460,7 @@ async def create_menu_item(item: schem.MenuItemCreate, category_id: int):
         return {"id":db_item.id}
 
 @router.patch("/items/{item_id}")
-async def update_menu_item(item_id: int, item: schem.MenuItemUpdate):
+async def update_menu_item(item_id: str, item: schem.MenuItemUpdate):
     async with async_session() as session:
         db_item = await session.scalar(select(MenuItem).where(MenuItem.id == item_id))
         if not db_item:
@@ -467,7 +474,7 @@ async def update_menu_item(item_id: int, item: schem.MenuItemUpdate):
         return {"success": True}
     
 @router.delete("/items/{item_id}")
-async def delete_menu_item(item_id: int):
+async def delete_menu_item(item_id: str):
     async with async_session() as session:
         db_item = await session.scalar(select(MenuItem).where(MenuItem.id == item_id))
         if not db_item:
@@ -477,5 +484,60 @@ async def delete_menu_item(item_id: int):
         await session.commit()
         
         return {"success": True}
+
+@router.post("/sync")
+async def batch_sync(ops: list[schem.SyncOperation]):
+    results = []
+    model_map = {
+        "user": User,
+        "hall": Hall,
+        "table": Table,
+        "category": MenuCategory,
+        "item": MenuItem,
+        "shift": Shift,
+        "order": Order,
+        "order_item": OrderItem,
+    }
+
+    async with async_session() as session:
+        for op in ops:
+            try:
+                model = model_map.get(op.entity)
+                if not model:
+                    raise ValueError(f"Unknown entity: {op.entity}")
+
+                # 🟢 CREATE
+                if op.action == "add":
+                    obj = model(**op.payload, user_id=op.user_id) \
+                        if "user_id" in model.__table__.columns else model(**op.payload)
+                    session.add(obj)
+                    await session.flush()
+
+                # 🟡 UPDATE (PATCH)
+                elif op.action == "update":
+                    db_obj = await session.get(model, op.payload["id"])
+                    if not db_obj:
+                        raise ValueError(f"{op.entity} not found: {op.payload['id']}")
+
+                    # обновляем только поля, которые реально пришли
+                    for field, value in op.payload.items():
+                        if field != "id" and hasattr(db_obj, field):
+                            setattr(db_obj, field, value)
+
+                # 🔴 DELETE
+                elif op.action == "delete":
+                    await session.execute(
+                        delete(model).where(model.id == op.payload["id"])
+                    )
+
+                results.append({"txId": op.id, "status": "ok"})
+
+            except Exception as e:
+                results.append({"txId": op.id, "status": "error", "error": str(e)})
+                await session.rollback()
+
+        await session.commit()
+
+    return results
 
 app.include_router(router)
