@@ -141,6 +141,7 @@ class Order(Base):
 
     id: Mapped[str] = mapped_column(String(21), primary_key=True)
     shift_id: Mapped[str] = mapped_column(ForeignKey("shifts.id", ondelete="CASCADE"))
+    hall_id: Mapped[Optional[str]] = mapped_column(ForeignKey("halls.id", ondelete="SET NULL"))
     table_id: Mapped[Optional[str]] = mapped_column(ForeignKey("tables.id", ondelete="SET NULL"))
     table_number: Mapped[int] = mapped_column(Integer, default=None)
     hall_name: Mapped[str] = mapped_column(String(100), default=None)

@@ -1,14 +1,12 @@
 from contextlib import asynccontextmanager
-from sqlalchemy import select, update, delete, func
-from fastapi import FastAPI, APIRouter, HTTPException
+from sqlalchemy import select, update, delete
+from fastapi import FastAPI, APIRouter, HTTPException, Body
 from sqlalchemy.orm import selectinload, with_loader_criteria
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime
+from typing import List
 from models import engine, init_db, User, Hall, Table, Shift, Order, MenuCategory, MenuItem, OrderItem, async_session
-import json
-from datetime import datetime
 import reqs as schem
-from decimal import Decimal
+
 @asynccontextmanager
 async def lifespan(app:FastAPI):
     await init_db()
@@ -484,10 +482,8 @@ async def delete_menu_item(item_id: str):
         await session.commit()
         
         return {"success": True}
-
 @router.post("/sync")
-async def batch_sync(ops: list[schem.SyncOperation]):
-    results = []
+async def batch_sync(ops: List[schem.SyncOperation] = Body(...)):
     model_map = {
         "user": User,
         "hall": Hall,
@@ -499,6 +495,8 @@ async def batch_sync(ops: list[schem.SyncOperation]):
         "order_item": OrderItem,
     }
 
+    results = []
+
     async with async_session() as session:
         for op in ops:
             try:
@@ -506,38 +504,97 @@ async def batch_sync(ops: list[schem.SyncOperation]):
                 if not model:
                     raise ValueError(f"Unknown entity: {op.entity}")
 
-                # 🟢 CREATE
+                data = op.payload.copy()
+                if "user_id" in model.__table__.columns and "user_id" not in data:
+                    data["user_id"] = op.user_id
+
                 if op.action == "add":
-                    obj = model(**op.payload, user_id=op.user_id) \
-                        if "user_id" in model.__table__.columns else model(**op.payload)
+                    obj = model(**data)
                     session.add(obj)
-                    await session.flush()
+                    await session.flush()  # отправляем INSERT в БД
+                    await session.commit()  # ✅ коммитим отдельную операцию
+                    results.append({"txId": op.id, "status": "ok"})
 
-                # 🟡 UPDATE (PATCH)
                 elif op.action == "update":
-                    db_obj = await session.get(model, op.payload["id"])
-                    if not db_obj:
-                        raise ValueError(f"{op.entity} not found: {op.payload['id']}")
-
-                    # обновляем только поля, которые реально пришли
-                    for field, value in op.payload.items():
-                        if field != "id" and hasattr(db_obj, field):
-                            setattr(db_obj, field, value)
-
-                # 🔴 DELETE
-                elif op.action == "delete":
                     await session.execute(
-                        delete(model).where(model.id == op.payload["id"])
+                        update(model)
+                        .where(model.id == data["id"])
+                        .values({k: v for k, v in data.items() if k != "id"})
                     )
+                    await session.commit()
+                    results.append({"txId": op.id, "status": "ok"})
 
-                results.append({"txId": op.id, "status": "ok"})
+                elif op.action == "delete":
+                    await session.execute(delete(model).where(model.id == data["id"]))
+                    await session.commit()
+                    results.append({"txId": op.id, "status": "ok"})
 
             except Exception as e:
-                results.append({"txId": op.id, "status": "error", "error": str(e)})
-                await session.rollback()
-
-        await session.commit()
-
+                await session.rollback()  # откатываем только текущую операцию
+                results.append({
+                    "txId": op.id,
+                    "status": "error",
+                    "entity": op.entity,
+                    "action": op.action,
+                    "error": str(e)
+                })
+    print(results)
     return results
+
+# @router.post("/sync")
+# async def batch_sync(ops: list[schem.SyncOperation]):
+#     results = []
+#     print(ops)
+#     model_map = {
+#         "user": User,
+#         "hall": Hall,
+#         "table": Table,
+#         "category": MenuCategory,
+#         "item": MenuItem,
+#         "shift": Shift,
+#         "order": Order,
+#         "order_item": OrderItem,
+#     }
+
+#     async with async_session() as session:
+#         for op in ops:
+#             try:
+#                 model = model_map.get(op.entity)
+#                 if not model:
+#                     raise ValueError(f"Unknown entity: {op.entity}")
+
+#                 # 🟢 CREATE
+#                 if op.action == "add":
+#                     obj = model(**op.payload, user_id=op.user_id) \
+#                         if "user_id" in model.__table__.columns else model(**op.payload)
+#                     session.add(obj)
+#                     await session.flush()
+
+#                 # 🟡 UPDATE (PATCH)
+#                 elif op.action == "update":
+#                     db_obj = await session.get(model, op.payload["id"])
+#                     if not db_obj:
+#                         raise ValueError(f"{op.entity} not found: {op.payload['id']}")
+
+#                     # обновляем только поля, которые реально пришли
+#                     for field, value in op.payload.items():
+#                         if field != "id" and hasattr(db_obj, field):
+#                             setattr(db_obj, field, value)
+
+#                 # 🔴 DELETE
+#                 elif op.action == "delete":
+#                     await session.execute(
+#                         delete(model).where(model.id == op.payload["id"])
+#                     )
+
+#                 results.append({"txId": op.id, "status": "ok"})
+
+#             except Exception as e:
+#                 results.append({"txId": op.id, "status": "error", "error": str(e)})
+#                 await session.rollback()
+
+#         await session.commit()
+
+#     return results
 
 app.include_router(router)

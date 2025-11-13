@@ -45,7 +45,7 @@ class OrderItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     order_id: str
-    menu_item_id: Optional[int]
+    menu_item_id: Optional[str]
     title: str
     price: float
     quantity: int
@@ -55,7 +55,8 @@ class OrderResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     shift_id: str
-    table_id: Optional[int]
+    hall_id: str
+    table_id: Optional[str]
     table_number: Optional[int]
     hall_name: Optional[str]
     created_at: int
@@ -256,8 +257,8 @@ class UserUpdate(BaseModel):
     pay_for_shift: Optional[float] = None
 
 class SyncOperation(BaseModel):
-    id: str                    # локальный id операции (для фронта)
-    user_id: int               # <-- добавляем
-    entity: str                # hall, table, item и т.д.
+    id: str                    
+    user_id: int               
+    entity: str                
     action: Literal["add", "update", "delete"]
     payload: dict    
