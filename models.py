@@ -45,7 +45,7 @@ class User(Base):
     shifts: Mapped[List["Shift"]] = relationship(back_populates="user", cascade="all, delete")
     halls: Mapped[List["Hall"]] = relationship(back_populates="user", cascade="all, delete")
     menu: Mapped[List["MenuCategory"]] = relationship(back_populates="user", cascade="all, delete")
-
+    notes : Mapped[List["Notes"]] = relationship(back_populates="user", cascade="all, delete")
     created_at: Mapped[int] = mapped_column(Integer, default=int(datetime.now(timeZone.utc).timestamp()))
     updated_at: Mapped[int] = mapped_column(
     Integer, 
@@ -54,6 +54,22 @@ class User(Base):
     onupdate=text('CAST(EXTRACT(epoch FROM NOW()) AS INTEGER)')
 )
 
+class Notes(Base):
+    __tablename__ = "notes"
+
+    id: Mapped[str] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    created_at: Mapped[int] = mapped_column(Integer, default=int(datetime.now(tz=timeZone.utc).timestamp()))
+    updated_at: Mapped[int] = mapped_column(
+    Integer, 
+    default=0,
+    server_default=text('0'),
+    onupdate=text('CAST(EXTRACT(epoch FROM NOW()) AS INTEGER)')
+)
+    header: Mapped[str] = mapped_column(String(255))
+    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    user: Mapped["User"] = relationship(back_populates="notes")
 
 class Shift(Base):
     __tablename__ = "shifts"
