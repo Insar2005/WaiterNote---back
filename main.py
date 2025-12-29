@@ -6,7 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 from models import engine, init_db, User, Hall, Table, Shift, Order, MenuCategory, MenuItem, OrderItem, async_session
 import reqs as schem
-
+import asyncio
+from sqlalchemy.exc import DBAPIError
 @asynccontextmanager
 async def lifespan(app:FastAPI):
     await init_db()
@@ -28,38 +29,55 @@ app.add_middleware(
 )
 
 @router.get("/{tg_id}")
-async def get_user_data(tg_id: int):
-    async with async_session() as session:
-        result = await session.execute(
-            select(User)
-            .options(
-                selectinload(User.shifts)
-                    .selectinload(Shift.orders)
-                    .selectinload(Order.items),
-                
-                selectinload(User.halls)
-                    .selectinload(Hall.tables),
-                
-                selectinload(User.menu)
-                    .selectinload(MenuCategory.items),
-                
-                # фильтр только к Shifts
-                with_loader_criteria(
-                    Shift,
-                    lambda Shift: Shift.is_closed == False
+async def get_user_data(tg_id: int, max_retries: int = 2):
+    for attempt in range(max_retries + 1):
+        try:
+            async with async_session() as session:
+                result = await session.execute(
+                    select(User)
+                    .options(
+                        selectinload(User.shifts)
+                            .selectinload(Shift.orders)
+                            .selectinload(Order.items),
+                        
+                        selectinload(User.halls)
+                            .selectinload(Hall.tables),
+                        
+                        selectinload(User.menu)
+                            .selectinload(MenuCategory.items),
+                        
+                        # фильтр только к Shifts
+                        with_loader_criteria(
+                            Shift,
+                            lambda Shift: Shift.is_closed == False
+                        )
+                    )
+                    .where(User.tg_id == tg_id)
                 )
-            )
-            .where(User.tg_id == tg_id)
-        )
 
-        user = result.scalars().first()
+                user = result.scalars().first()
 
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+                if not user:
+                    raise HTTPException(status_code=404, detail="User not found")
 
-        # ⭐ Преобразуем ORM → dict, чтобы исключить lazy-load
-        return schem.UserResponse.model_validate(user, from_attributes=True)
-
+                # ⭐ Преобразуем ORM → dict, чтобы исключить lazy-load
+                return schem.UserResponse.model_validate(user, from_attributes=True)
+                
+        except DBAPIError as e:
+            # Проверяем, что это именно ошибка соединения
+            
+                if attempt < max_retries:
+                    wait_time = 2
+                    print(f"Connection lost. Retrying in {wait_time} seconds... (Attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    print(f"All {max_retries} attempts failed. Raising exception.")
+                    raise
+ 
+    
+    # Эта строка никогда не должна выполниться, но для безопасности
+    raise RuntimeError("Unexpected error in get_user_data")
 
 @router.patch("/{user_id}")
 async def update_user(user_id: int, user: schem.UserUpdate):
