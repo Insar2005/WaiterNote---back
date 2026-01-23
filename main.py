@@ -581,7 +581,7 @@ app = FastAPI(title="Waiter Note API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://waiternote-52ff2.web.app",
+        "https://waiterapp-cc1e8.web.app",
         "http://localhost:5173",
     ],
     allow_credentials=True,
