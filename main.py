@@ -631,6 +631,7 @@ async def create_user(payload: UserCreateRequest, response: Response):
         response.status_code = 201
 
         user = User(
+           id=payload.id,
             tg_id=payload.tg_id,
             username=payload.username,
             language=payload.language,
