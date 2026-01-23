@@ -1,542 +1,447 @@
 {
-  "id": 1,
-  "tg_id": 821395808,
-  "username": "Александр Петров",
-  "language": "ru",
-  "place_work_title": "Ресторан 'У Ивана'",
-  "timezone": "Europe/Moscow",
-  "currency": "RUB",
-  "service_percent": 10,
-  "shift_type": "fixed",
-  "pay_for_shift": 1500.00,
-  "shifs": [
+  "users": [
     {
       "id": 1,
-      "user_id": 1,
-      "start_time": "2024-01-15T10:00:00Z",
-      "is_closed": false,
-      "end_time": null,
-      "place_work_title": "Ресторан 'У Ивана'",
-      "currency": "RUB",
-      "service_percent": 10,
-      "shift_type": "fixed",
-      "pay_for_shift": 1500.00,
-      "total_pay_for_shift": 0,
-      "total_tips": 0,
-      "total_cash_register": 0,
-      "duration": 0,
-      "orders": [
-        {
-          "id": 1,
-          "shift_id": 1,
-          "table_id": 1,
-          "table_number": 1,
-          "hall_name": "Основной зал",
-          "created_at": "2024-01-15T12:30:00Z",
-          "comments": "Стол у окна",
-          "tips": 200.00,
-          "total_price": 2850.00,
-          "is_paid": true,
-          "is_done": true,
-          "items": [
-            {
-              "id": 1,
-              "order_id": 1,
-              "menu_item_id": 1,
-              "title": "Сельдь с картошкой",
-              "price": 450.00,
-              "quantity": 2,
-              "comment": "Без лука"
-            },
-            {
-              "id": 2,
-              "order_id": 1,
-              "menu_item_id": 7,
-              "title": "Кола",
-              "price": 150.00,
-              "quantity": 3,
-              "comment": "Со льдом"
-            },
-            {
-              "id": 3,
-              "order_id": 1,
-              "menu_item_id": 13,
-              "title": "Стейк Рибай",
-              "price": 1200.00,
-              "quantity": 1,
-              "comment": "Medium rare"
-            },
-            {
-              "id": 4,
-              "order_id": 1,
-              "menu_item_id": 17,
-              "title": "Тирамису",
-              "price": 300.00,
-              "quantity": 1,
-              "comment": null
-            }
-          ]
-        },
-        {
-          "id": 2,
-          "shift_id": 1,
-          "table_id": 3,
-          "table_number": 3,
-          "hall_name": "Основной зал",
-          "created_at": "2024-01-15T13:15:00Z",
-          "comments": "Детский праздник",
-          "tips": 150.00,
-          "total_price": 4200.00,
-          "is_paid": false,
-          "is_done": false,
-          "items": [
-            {
-              "id": 5,
-              "order_id": 2,
-              "menu_item_id": 4,
-              "title": "Салат Цезарь",
-              "price": 520.00,
-              "quantity": 2,
-              "comment": "Дополнительный соус"
-            },
-            {
-              "id": 6,
-              "order_id": 2,
-              "menu_item_id": 9,
-              "title": "Картофель фри",
-              "price": 280.00,
-              "quantity": 3,
-              "comment": null
-            },
-            {
-              "id": 7,
-              "order_id": 2,
-              "menu_item_id": 16,
-              "title": "Сок апельсиновый",
-              "price": 180.00,
-              "quantity": 4,
-              "comment": "Свежевыжатый"
-            },
-            {
-              "id": 8,
-              "order_id": 2,
-              "menu_item_id": 18,
-              "title": "Чизкейк",
-              "price": 350.00,
-              "quantity": 2,
-              "comment": "С малиновым соусом"
-            }
-          ]
-        },
-        {
-          "id": 3,
-          "shift_id": 1,
-          "table_id": 4,
-          "table_number": 1,
-          "hall_name": "VIP зал",
-          "created_at": "2024-01-15T14:00:00Z",
-          "comments": "Бизнес-ланч",
-          "tips": 300.00,
-          "total_price": 5600.00,
-          "is_paid": true,
-          "is_done": false,
-          "items": [
-            {
-              "id": 9,
-              "order_id": 3,
-              "menu_item_id": 3,
-              "title": "Тар-тар из говядины",
-              "price": 680.00,
-              "quantity": 2,
-              "comment": "Острый"
-            },
-            {
-              "id": 10,
-              "order_id": 3,
-              "menu_item_id": 14,
-              "title": "Лосось на гриле",
-              "price": 890.00,
-              "quantity": 2,
-              "comment": "С двойными овощами"
-            },
-            {
-              "id": 11,
-              "order_id": 3,
-              "menu_item_id": 19,
-              "title": "Мороженое",
-              "price": 250.00,
-              "quantity": 3,
-              "comment": "Ванильное"
-            },
-            {
-              "id": 12,
-              "order_id": 3,
-              "menu_item_id": 20,
-              "title": "Кофе латте",
-              "price": 280.00,
-              "quantity": 4,
-              "comment": "С корицей"
-            }
-          ]
-        }
-      ]
+      "tg_id": 987654321,
+      "username": "waiter_max",
+      "language": "ru",
+      "timezone": "Europe/Moscow",
+      "last_online_at": 1768735800,
+      "last_workplace_id": "WPL_00000000000000001",
+      "is_onboarding_completed": true,
+      "is_disabled": false,
+      "created_at": 1767225600,
+      "updated_at": 1768735800
     }
   ],
-  "menu": [
+  "workplaces": [
     {
-      "id": 1,
+      "id": "WPL_00000000000000001",
       "user_id": 1,
-      "title": "Холодные закуски",
-      "position": 1,
-      "items": [
-        {
-          "id": 1,
-          "category_id": 1,
-          "title": "Сельдь с картошкой",
-          "description": "Сельдь малосольная с отварным картофелем и луком",
-          "portion": "250г",
-          "price": 450.00,
-          "position": 1
-        },
-        {
-          "id": 2,
-          "category_id": 1,
-          "title": "Брускетта с томатами",
-          "description": "Хлеб с чесноком, помидорами и базиликом",
-          "portion": "180г",
-          "price": 320.00,
-          "position": 2
-        },
-        {
-          "id": 3,
-          "category_id": 1,
-          "title": "Тар-тар из говядины",
-          "description": "Сырая говядина с каперсами и луком",
-          "portion": "200г",
-          "price": 680.00,
-          "position": 3
-        },
-        {
-          "id": 4,
-          "category_id": 1,
-          "title": "Салат Цезарь",
-          "description": "С курицей, сухариками и соусом цезарь",
-          "portion": "300г",
-          "price": 520.00,
-          "position": 4
-        },
-        {
-          "id": 5,
-          "category_id": 1,
-          "title": "Овощная тарелка",
-          "description": "Свежие сезонные овощи",
-          "portion": "350г",
-          "price": 380.00,
-          "position": 5
-        }
-      ]
-    },
-    {
-      "id": 2,
-      "user_id": 1,
-      "title": "Горячие закуски",
-      "position": 2,
-      "items": [
-        {
-          "id": 6,
-          "category_id": 2,
-          "title": "Крылья барбекю",
-          "description": "Куриные крылья в соусе барбекю",
-          "portion": "400г",
-          "price": 580.00,
-          "position": 1
-        },
-        {
-          "id": 7,
-          "category_id": 2,
-          "title": "Жульен с грибами",
-          "description": "Грибы в сметанном соусе под сыром",
-          "portion": "200г",
-          "price": 420.00,
-          "position": 2
-        },
-        {
-          "id": 8,
-          "category_id": 2,
-          "title": "Кальмары в кляре",
-          "description": "Хрустящие кальмары с соусом тар-тар",
-          "portion": "250г",
-          "price": 490.00,
-          "position": 3
-        },
-        {
-          "id": 9,
-          "category_id": 2,
-          "title": "Картофель фри",
-          "description": "С сырным соусом",
-          "portion": "200г",
-          "price": 280.00,
-          "position": 4
-        },
-        {
-          "id": 10,
-          "category_id": 2,
-          "title": "Луковые кольца",
-          "description": "В хрустящем кляре",
-          "portion": "180г",
-          "price": 320.00,
-          "position": 5
-        }
-      ]
-    },
-    {
-      "id": 3,
-      "user_id": 1,
-      "title": "Основные блюда",
-      "position": 3,
-      "items": [
-        {
-          "id": 11,
-          "category_id": 3,
-          "title": "Стейк Рибай",
-          "description": "Мраморная говядина прожарки medium",
-          "portion": "400г",
-          "price": 1200.00,
-          "position": 1
-        },
-        {
-          "id": 12,
-          "category_id": 3,
-          "title": "Лосось на гриле",
-          "description": "С овощами и лимоном",
-          "portion": "300г",
-          "price": 890.00,
-          "position": 2
-        },
-        {
-          "id": 13,
-          "category_id": 3,
-          "title": "Утка с яблоками",
-          "description": "Утиная ножка с печеными яблоками",
-          "portion": "350г",
-          "price": 950.00,
-          "position": 3
-        },
-        {
-          "id": 14,
-          "category_id": 3,
-          "title": "Паста Карбонара",
-          "description": "С беконом и пармезаном",
-          "portion": "350г",
-          "price": 620.00,
-          "position": 4
-        },
-        {
-          "id": 15,
-          "category_id": 3,
-          "title": "Куриное филе",
-          "description": "В сливочном соусе с грибами",
-          "portion": "300г",
-          "price": 580.00,
-          "position": 5
-        }
-      ]
-    },
-    {
-      "id": 4,
-      "user_id": 1,
-      "title": "Напитки",
-      "position": 4,
-      "items": [
-        {
-          "id": 16,
-          "category_id": 4,
-          "title": "Сок апельсиновый",
-          "description": "Свежевыжатый апельсиновый сок",
-          "portion": "250мл",
-          "price": 180.00,
-          "position": 1
-        },
-        {
-          "id": 17,
-          "category_id": 4,
-          "title": "Кола",
-          "description": "Coca-Cola 0.5л",
-          "portion": "500мл",
-          "price": 150.00,
-          "position": 2
-        },
-        {
-          "id": 18,
-          "category_id": 4,
-          "title": "Минеральная вода",
-          "description": "Borjomi 0.5л",
-          "portion": "500мл",
-          "price": 120.00,
-          "position": 3
-        },
-        {
-          "id": 19,
-          "category_id": 4,
-          "title": "Чай черный",
-          "description": "С лимоном или молоком",
-          "portion": "300мл",
-          "price": 100.00,
-          "position": 4
-        },
-        {
-          "id": 20,
-          "category_id": 4,
-          "title": "Кофе латте",
-          "description": "С молочной пенкой",
-          "portion": "300мл",
-          "price": 280.00,
-          "position": 5
-        }
-      ]
-    },
-    {
-      "id": 5,
-      "user_id": 1,
-      "title": "Десерты",
-      "position": 5,
-      "items": [
-        {
-          "id": 21,
-          "category_id": 5,
-          "title": "Тирамису",
-          "description": "Классический итальянский десерт",
-          "portion": "150г",
-          "price": 300.00,
-          "position": 1
-        },
-        {
-          "id": 22,
-          "category_id": 5,
-          "title": "Чизкейк",
-          "description": "Нью-йоркский чизкейк",
-          "portion": "180г",
-          "price": 350.00,
-          "position": 2
-        },
-        {
-          "id": 23,
-          "category_id": 5,
-          "title": "Мороженое",
-          "description": "Ванильное, шоколадное, клубничное",
-          "portion": "100г",
-          "price": 250.00,
-          "position": 3
-        },
-        {
-          "id": 24,
-          "category_id": 5,
-          "title": "Шоколадный фондан",
-          "description": "С жидкой шоколадной начинкой",
-          "portion": "120г",
-          "price": 320.00,
-          "position": 4
-        },
-        {
-          "id": 25,
-          "category_id": 5,
-          "title": "Яблочный пирог",
-          "description": "С ванильным мороженым",
-          "portion": "200г",
-          "price": 280.00,
-          "position": 5
-        }
-      ]
+      "title": "Waiter Note Demo",
+      "timezone": "Europe/Moscow",
+      "currency": "RUB",
+      "service_percent_default": 10,
+      "shift_type_default": "fixed",
+      "pay_for_shift_default": 2500.0,
+      "position": 0,
+      "is_archived": false,
+      "created_at": 1767228600,
+      "updated_at": 1768732200
     }
   ],
   "halls": [
     {
-      "id": 1,
-      "user_id": 1,
+      "id": "HALL_0000000000000001",
+      "workplace_id": "WPL_00000000000000001",
       "name": "Основной зал",
-      "position": 1,
-      "tables": [
-        {
-          "id": 1,
-          "hall_id": 1,
-          "number": 1,
-          "x": 100,
-          "y": 150,
-          "width": 100,
-          "height": 100,
-          "rotation": 0,
-          "border_radius": 15,
-          "status": "occupied"
-        },
-        {
-          "id": 2,
-          "hall_id": 1,
-          "number": 2,
-          "x": 250,
-          "y": 150,
-          "width": 100,
-          "height": 100,
-          "rotation": 0,
-          "border_radius": 15,
-          "status": "free"
-        },
-        {
-          "id": 3,
-          "hall_id": 1,
-          "number": 3,
-          "x": 400,
-          "y": 150,
-          "width": 100,
-          "height": 100,
-          "rotation": 0,
-          "border_radius": 15,
-          "status": "occupied"
-        }
-      ]
+      "position": 0,
+      "width": 1200,
+      "height": 800,
+      "scale": 1.0
     },
     {
-      "id": 2,
-      "user_id": 1,
-      "name": "VIP зал",
+      "id": "HALL_0000000000000002",
+      "workplace_id": "WPL_00000000000000001",
+      "name": "Терраса",
+      "position": 1,
+      "width": 1000,
+      "height": 600,
+      "scale": 1.0
+    }
+  ],
+  "tables": [
+    {
+      "id": "TBL_00000000000000001",
+      "hall_id": "HALL_0000000000000001",
+      "order_id": "ORD_00000000000000001",
+      "number": 1,
+      "x": 100.0,
+      "y": 120.0,
+      "width": 120,
+      "height": 120,
+      "rotation": 0,
+      "border_radius": 15,
+      "status": "occupied"
+    },
+    {
+      "id": "TBL_00000000000000002",
+      "hall_id": "HALL_0000000000000001",
+      "order_id": null,
+      "number": 2,
+      "x": 300.0,
+      "y": 120.0,
+      "width": 120,
+      "height": 120,
+      "rotation": 0,
+      "border_radius": 15,
+      "status": "free"
+    },
+    {
+      "id": "TBL_00000000000000003",
+      "hall_id": "HALL_0000000000000001",
+      "order_id": null,
+      "number": 3,
+      "x": 500.0,
+      "y": 120.0,
+      "width": 120,
+      "height": 120,
+      "rotation": 0,
+      "border_radius": 15,
+      "status": "reserved"
+    },
+    {
+      "id": "TBL_00000000000000004",
+      "hall_id": "HALL_0000000000000002",
+      "order_id": null,
+      "number": 10,
+      "x": 120.0,
+      "y": 100.0,
+      "width": 140,
+      "height": 120,
+      "rotation": 0,
+      "border_radius": 15,
+      "status": "waiting"
+    },
+    {
+      "id": "TBL_00000000000000005",
+      "hall_id": "HALL_0000000000000002",
+      "order_id": null,
+      "number": 11,
+      "x": 320.0,
+      "y": 100.0,
+      "width": 140,
+      "height": 120,
+      "rotation": 0,
+      "border_radius": 15,
+      "status": "free"
+    },
+    {
+      "id": "TBL_00000000000000006",
+      "hall_id": "HALL_0000000000000002",
+      "order_id": null,
+      "number": 12,
+      "x": 520.0,
+      "y": 100.0,
+      "width": 140,
+      "height": 120,
+      "rotation": 0,
+      "border_radius": 15,
+      "status": "free"
+    }
+  ],
+  "menu_categories": [
+    {
+      "id": "CAT_00000000000000001",
+      "workplace_id": "WPL_00000000000000001",
+      "title": "Напитки",
+      "position": 0,
+      "is_active": true
+    },
+    {
+      "id": "CAT_00000000000000002",
+      "workplace_id": "WPL_00000000000000001",
+      "title": "Горячее",
+      "position": 1,
+      "is_active": true
+    },
+    {
+      "id": "CAT_00000000000000003",
+      "workplace_id": "WPL_00000000000000001",
+      "title": "Салаты",
       "position": 2,
-      "tables": [
-        {
-          "id": 4,
-          "hall_id": 2,
-          "number": 1,
-          "x": 100,
-          "y": 300,
-          "width": 120,
-          "height": 120,
-          "rotation": 0,
-          "border_radius": 20,
-          "status": "occupied"
-        },
-        {
-          "id": 5,
-          "hall_id": 2,
-          "number": 2,
-          "x": 280,
-          "y": 300,
-          "width": 120,
-          "height": 120,
-          "rotation": 0,
-          "border_radius": 20,
-          "status": "reserved"
-        },
-        {
-          "id": 6,
-          "hall_id": 2,
-          "number": 3,
-          "x": 460,
-          "y": 300,
-          "width": 120,
-          "height": 120,
-          "rotation": 0,
-          "border_radius": 20,
-          "status": "free"
-        }
-      ]
+      "is_active": true
+    }
+  ],
+  "menu_items": [
+    {
+      "id": "MNU_00000000000000001",
+      "category_id": "CAT_00000000000000001",
+      "title": "Американо",
+      "description": "Эспрессо + горячая вода",
+      "portion": "200 мл",
+      "price": 190.0,
+      "position": 0,
+      "is_active": true
+    },
+    {
+      "id": "MNU_00000000000000002",
+      "category_id": "CAT_00000000000000001",
+      "title": "Капучино",
+      "description": "Эспрессо + молоко",
+      "portion": "250 мл",
+      "price": 240.0,
+      "position": 1,
+      "is_active": true
+    },
+    {
+      "id": "MNU_00000000000000003",
+      "category_id": "CAT_00000000000000001",
+      "title": "Морс",
+      "description": "Домашний ягодный морс",
+      "portion": "250 мл",
+      "price": 150.0,
+      "position": 2,
+      "is_active": true
+    },
+    {
+      "id": "MNU_00000000000000004",
+      "category_id": "CAT_00000000000000002",
+      "title": "Паста карбонара",
+      "description": "Классическая карбонара с беконом",
+      "portion": "320 г",
+      "price": 590.0,
+      "position": 0,
+      "is_active": true
+    },
+    {
+      "id": "MNU_00000000000000005",
+      "category_id": "CAT_00000000000000002",
+      "title": "Курица гриль",
+      "description": "Куриное филе на гриле",
+      "portion": "250 г",
+      "price": 650.0,
+      "position": 1,
+      "is_active": true
+    },
+    {
+      "id": "MNU_00000000000000006",
+      "category_id": "CAT_00000000000000003",
+      "title": "Цезарь с курицей",
+      "description": "Салат с курицей, сухариками и соусом",
+      "portion": "250 г",
+      "price": 520.0,
+      "position": 0,
+      "is_active": true
+    },
+    {
+      "id": "MNU_00000000000000007",
+      "category_id": "CAT_00000000000000003",
+      "title": "Греческий",
+      "description": "Овощи, фета, оливки",
+      "portion": "240 г",
+      "price": 460.0,
+      "position": 1,
+      "is_active": true
+    }
+  ],
+  "shifts": [
+    {
+      "id": "SFT_00000000000000001",
+      "workplace_id": "WPL_00000000000000001",
+      "start_time": 1768730400,
+      "is_closed": false,
+      "end_time": 0,
+      "place_work_title": "Waiter Note Demo",
+      "currency": "RUB",
+      "service_percent": 10,
+      "shift_type": "fixed",
+      "pay_for_shift": 2500.0,
+      "total_pay_for_shift": 2500.0,
+      "total_tips": 300.0,
+      "total_cash_register": 1640.0,
+      "order_count": 2,
+      "duration": 0
+    },
+    {
+      "id": "SFT_00000000000000002",
+      "workplace_id": "WPL_00000000000000001",
+      "start_time": 1768644000,
+      "is_closed": true,
+      "end_time": 1768683600,
+      "place_work_title": "Waiter Note Demo",
+      "currency": "RUB",
+      "service_percent": 10,
+      "shift_type": "fixed",
+      "pay_for_shift": 2500.0,
+      "total_pay_for_shift": 2500.0,
+      "total_tips": 500.0,
+      "total_cash_register": 1300.0,
+      "order_count": 1,
+      "duration": 39600
+    }
+  ],
+  "orders": [
+    {
+      "id": "ORD_00000000000000001",
+      "shift_id": "SFT_00000000000000001",
+      "hall_id": "HALL_0000000000000001",
+      "table_id": "TBL_00000000000000001",
+      "table_number": 1,
+      "hall_name": "Основной зал",
+      "comments": "Соус отдельно, напитки принести сразу.",
+      "created_at": 1768732200,
+      "updated_at": 1768735800,
+      "closed_at": 0,
+      "tips": 0.0,
+      "total_price": 1590.0,
+      "is_paid": false,
+      "is_done": false
+    },
+    {
+      "id": "ORD_00000000000000002",
+      "shift_id": "SFT_00000000000000001",
+      "hall_id": "HALL_0000000000000002",
+      "table_id": "TBL_00000000000000004",
+      "table_number": 10,
+      "hall_name": "Терраса",
+      "comments": null,
+      "created_at": 1768766400,
+      "updated_at": 1768779900,
+      "closed_at": 1768779900,
+      "tips": 300.0,
+      "total_price": 1640.0,
+      "is_paid": true,
+      "is_done": true
+    },
+    {
+      "id": "ORD_00000000000000003",
+      "shift_id": "SFT_00000000000000002",
+      "hall_id": "HALL_0000000000000001",
+      "table_id": "TBL_00000000000000002",
+      "table_number": 2,
+      "hall_name": "Основной зал",
+      "comments": "Кофе без сахара.",
+      "created_at": 1768651200,
+      "updated_at": 1768662000,
+      "closed_at": 1768662000,
+      "tips": 500.0,
+      "total_price": 1300.0,
+      "is_paid": true,
+      "is_done": true
+    }
+  ],
+  "order_items": [
+    {
+      "id": "ITM_00000000000000001",
+      "order_id": "ORD_00000000000000001",
+      "menu_item_id": "MNU_00000000000000002",
+      "title": "Капучино",
+      "price": 240.0,
+      "quantity": 2,
+      "total_price": 480.0,
+      "comment": "На безлактозном молоке."
+    },
+    {
+      "id": "ITM_00000000000000002",
+      "order_id": "ORD_00000000000000001",
+      "menu_item_id": "MNU_00000000000000006",
+      "title": "Цезарь с курицей",
+      "price": 520.0,
+      "quantity": 1,
+      "total_price": 520.0,
+      "comment": "Соус отдельно."
+    },
+    {
+      "id": "ITM_00000000000000003",
+      "order_id": "ORD_00000000000000001",
+      "menu_item_id": "MNU_00000000000000004",
+      "title": "Паста карбонара",
+      "price": 590.0,
+      "quantity": 1,
+      "total_price": 590.0,
+      "comment": null
+    },
+    {
+      "id": "ITM_00000000000000004",
+      "order_id": "ORD_00000000000000002",
+      "menu_item_id": "MNU_00000000000000001",
+      "title": "Американо",
+      "price": 190.0,
+      "quantity": 1,
+      "total_price": 190.0,
+      "comment": null
+    },
+    {
+      "id": "ITM_00000000000000005",
+      "order_id": "ORD_00000000000000002",
+      "menu_item_id": "MNU_00000000000000005",
+      "title": "Курица гриль",
+      "price": 650.0,
+      "quantity": 2,
+      "total_price": 1300.0,
+      "comment": "Одну порцию без кожи."
+    },
+    {
+      "id": "ITM_00000000000000006",
+      "order_id": "ORD_00000000000000002",
+      "menu_item_id": "MNU_00000000000000003",
+      "title": "Морс",
+      "price": 150.0,
+      "quantity": 1,
+      "total_price": 150.0,
+      "comment": "Без льда."
+    },
+    {
+      "id": "ITM_00000000000000007",
+      "order_id": "ORD_00000000000000003",
+      "menu_item_id": "MNU_00000000000000001",
+      "title": "Американо",
+      "price": 190.0,
+      "quantity": 1,
+      "total_price": 190.0,
+      "comment": null
+    },
+    {
+      "id": "ITM_00000000000000008",
+      "order_id": "ORD_00000000000000003",
+      "menu_item_id": "MNU_00000000000000006",
+      "title": "Цезарь с курицей",
+      "price": 520.0,
+      "quantity": 1,
+      "total_price": 520.0,
+      "comment": null
+    },
+    {
+      "id": "ITM_00000000000000009",
+      "order_id": "ORD_00000000000000003",
+      "menu_item_id": "MNU_00000000000000004",
+      "title": "Паста карбонара",
+      "price": 590.0,
+      "quantity": 1,
+      "total_price": 590.0,
+      "comment": null
+    }
+  ],
+  "notes": [
+    {
+      "id": "NTS_00000000000000001",
+      "user_id": 1,
+      "scope": "global",
+      "workplace_id": null,
+      "shift_id": null,
+      "header": "Чек-лист перед сменой",
+      "content": "1) Проверить форму\n2) Зарядить телефон\n3) Подготовить блокнот (если нужен)",
+      "pinned": true,
+      "archived": false,
+      "created_at": 1767225600,
+      "updated_at": 1768730400
+    },
+    {
+      "id": "NTS_00000000000000002",
+      "user_id": 1,
+      "scope": "workplace",
+      "workplace_id": "WPL_00000000000000001",
+      "shift_id": null,
+      "header": "Особенности заведения",
+      "content": "— Сервисный сбор 10% по умолчанию\n— Вода гостям бесплатно\n— Возвраты только через менеджера",
+      "pinned": false,
+      "archived": false,
+      "created_at": 1767228600,
+      "updated_at": 1767228600
+    },
+    {
+      "id": "NTS_00000000000000003",
+      "user_id": 1,
+      "scope": "shift",
+      "workplace_id": "WPL_00000000000000001",
+      "shift_id": "SFT_00000000000000001",
+      "header": "Смена 18.01",
+      "content": "Не забыть: отметить оплату по столу №10 и пробить чаевые отдельно.",
+      "pinned": false,
+      "archived": false,
+      "created_at": 1768730400,
+      "updated_at": 1768732200
     }
   ]
 }
