@@ -92,7 +92,7 @@ class Base(AsyncAttrs, DeclarativeBase):
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
 
     tg_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
     username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -150,7 +150,7 @@ class Workplace(Base):
 
     id: Mapped[str] = mapped_column(ID21, primary_key=True)
 
-    user_id: Mapped[int] = mapped_column(
+    user_id: Mapped[int] = mapped_column(BigInteger,
         ForeignKey("users.id", ondelete="CASCADE"),
         index=True,
         nullable=False,
