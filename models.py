@@ -123,12 +123,7 @@ class User(Base):
         foreign_keys="Workplace.user_id",
     )
 
-    # convenience pointer (optional)
-    last_workplace: Mapped[Optional["Workplace"]] = relationship(
-        "Workplace",
-        foreign_keys=[last_workplace_id],
-        post_update=True,
-    )
+  
 
     notes: Mapped[List["Notes"]] = relationship(
         "Notes",

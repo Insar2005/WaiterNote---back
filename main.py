@@ -6,7 +6,7 @@ from typing import List, Optional
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Response, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import delete, select
+from sqlalchemy import delete, desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from models import (
@@ -378,6 +378,24 @@ async def get_shifts_by_period_for_workplace(
 
         return [ShiftInHistoryResponse.model_validate(shift) for shift in shifts]
 
+
+@shifts_router.get("/workplaces/{workplace_id}/shifts/active", response_model=ShiftResponse)
+async def get_active_shift_for_workplace_with_orders_and_order_items(workplace_id: str):
+    async with async_session() as session:
+        stmt = (
+            select(Shift)
+            .where(
+                Shift.workplace_id == workplace_id,
+                Shift.is_closed.is_(False),  # ✅
+            )
+            
+            
+            .options(selectinload(Shift.orders).selectinload(Order.items))
+        )
+        shift = await session.scalar(stmt)  # ✅ проще, чем execute+scalar_one_or_none
+        if shift is None:
+            raise HTTPException(status_code=404, detail="Active shift not found")
+        return ShiftResponse.model_validate(shift)
 @shifts_router.get("/workplaces/{workplace_id}/shifts/{shift_id}", response_model=ShiftResponse)
 async def get_shift_for_workplace_with_orders_and_order_items(workplace_id: str, shift_id: str):
     async with async_session() as session:
@@ -391,7 +409,6 @@ async def get_shift_for_workplace_with_orders_and_order_items(workplace_id: str,
         if shift is None:
             raise HTTPException(status_code=404, detail="Shift not found")
         return ShiftResponse.model_validate(shift)
-
 @shifts_router.patch(
     "/workplaces/{workplace_id}/shifts/active/orders/{order_id}",
     status_code=200,
@@ -496,21 +513,7 @@ async def create_order_with_items_for_active_shift(workplace_id: str, req: Order
         return "Order with items created successfully"
     
         
-@shifts_router.get("/workplaces/{workplace_id}/shifts/active", response_model=ShiftResponse)
-async def get_active_shift_for_workplace_with_orders_and_order_items(workplace_id: str):
-    async with async_session() as session:
-        stmt = (
-            select(Shift)
-            .where(Shift.workplace_id == workplace_id, Shift.is_closed == False)
-            .options(selectinload(Shift.orders).selectinload(Order.items))
-        )
-        result = await session.execute(stmt)
-        shift = result.scalar_one_or_none()
-        if shift is None:
-            raise HTTPException(status_code=404, detail="Active shift not found")
-        return ShiftResponse.model_validate(shift)
 
-    
 @shifts_router.patch("/workplaces/{workplace_id}/shifts/{shift_id}", status_code=200)
 async def update_shift(workplace_id: str, shift_id: str, req: ShiftPatchUpdate):
     """Update an existing shift."""
