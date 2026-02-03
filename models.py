@@ -103,16 +103,10 @@ class User(Base):
     last_online_at: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
 
     last_workplace_id: Mapped[Optional[str]] = mapped_column(
-    ID21,
-    ForeignKey(
-        "workplaces.id",
-        ondelete="SET NULL",
-        use_alter=True,
-        name="fk_users_last_workplace",
-    ),
-    nullable=True,
-    index=True,
-)
+        ForeignKey("workplaces.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
 
     is_onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_disabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
