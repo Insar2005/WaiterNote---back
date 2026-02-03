@@ -1,38 +1,14 @@
-"""Waiter Note API (MVP).
-
-Backend goals for this iteration (per product requirements):
-
-1) Profile
-   - Front sends: tg_id
-   - Back returns: User data + Notes + list of workplaces (id/title)
-
-2) Workplace context
-   - Front sends: workplace_id (usually user.last_workplace_id)
-   - Back returns: workplace expanded (halls+tables, menu categories+items, shifts, workplace notes)
-
-3) CRUD (GET/POST/PATCH)
-   - Shifts
-   - Orders (+ order items)
-   - Halls and tables
-   - Menu (categories & items)
-
-This file is written for FastAPI + SQLAlchemy Async.
-"""
-
 from __future__ import annotations
-
 import secrets
 import string
 from contextlib import asynccontextmanager
 from typing import List, Optional
-
-from fastapi import APIRouter, FastAPI, HTTPException, Query, Response
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Response, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
-
 from models import (
     Hall,
     MenuCategory,
@@ -49,520 +25,138 @@ from models import (
     init_db,
     utc_ts,
 )
+from reqs import HallCreateRequest, HallPatchUpdate, HallResponse, MenuCategoryCreateRequest, MenuCategoryPatchUpdate, MenuCategoryResponse, MenuItemCreateRequest, MenuItemPatchUpdate, NotesCreateRequest, NotesPatchUpdate, NotesResponse, OrderCreateRequest, OrderPatchUpdate, ShiftCreateRequest, ShiftInHistoryResponse, ShiftPatchUpdate, ShiftResponse, TableCreateRequest, TablePatchUpdate, UserCreateRequest, UserPatchUpdate, UserResponse,WorkplaceCreateRequest, WorkplacePatchUpdate, WorkplaceResponse
 
+
+
+from typing import Dict, List, Literal, Optional, Tuple, Union
+
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, select
+from sqlalchemy.sql.schema import Column
 
 # =========================
-# Helpers
+# Batch delete: schemas
 # =========================
 
-def gen_id(prefix: str) -> str:
-    """Generate an ID that fits models.ID21 (String(21)).
+EntityName = Literal[
+    "users",               # PK: users.id (int)
+    "users_by_tg_id",       # key: users.tg_id (bigint) - удобно, раз ты часто работаешь по tg_id
+    "workplaces",
+    "halls",
+    "tables",
+    "menu_categories",
+    "menu_items",
+    "shifts",
+    "orders",
+    "order_items",
+    "notes",
+]
 
-    Project uses IDs like:
-      - WPL_00000000000000001  (len(prefix_with_underscore)=4  -> 17 digits)
-      - HALL_0000000000000001  (len(prefix_with_underscore)=5  -> 16 digits)
 
-    We therefore compute suffix length dynamically to keep total length == 21.
+class BatchDeleteOp(BaseModel):
+    entity: EntityName
+    ids: List[Union[str, int]] = Field(..., min_length=1)
+
+
+class BatchDeleteRequest(BaseModel):
+    ops: List[BatchDeleteOp] = Field(..., min_length=1)
+    strict: bool = False
+    """
+    strict=True: если по какой-то операции rowcount == 0 -> кидаем 404.
+    strict=False: просто удаляем что можем, rowcount может быть 0 (например, уже удалено каскадом).
     """
 
-    if not prefix:
-        raise ValueError("prefix must be non-empty")
-    p = prefix.upper().rstrip("_")
-    if not p.isalnum():
-        raise ValueError("prefix must be alphanumeric")
 
-    prefix_with_sep = f"{p}_"
-    digits_len = 21 - len(prefix_with_sep)
-    if digits_len <= 0:
-        raise ValueError("prefix is too long for ID21")
-
-    suffix = "".join(secrets.choice(string.digits) for _ in range(digits_len))
-    return f"{prefix_with_sep}{suffix}"
-
-
-async def _get_user_by_tg_id(session, tg_id: int) -> User:
-    res = await session.execute(
-        select(User)
-        .options(selectinload(User.workplaces), selectinload(User.notes))
-        .where(User.tg_id == tg_id)
-    )
-    user = res.scalars().first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
-
-
-async def _get_workplace_expanded(session, workplace_id: str) -> Workplace:
-    res = await session.execute(
-        select(Workplace)
-        .options(
-            selectinload(Workplace.halls).selectinload(Hall.tables),
-            selectinload(Workplace.menu_categories).selectinload(MenuCategory.items),
-            selectinload(Workplace.shifts),
-            selectinload(Workplace.notes),
-        )
-        .where(Workplace.id == workplace_id)
-    )
-    workplace = res.scalars().first()
-    if not workplace:
-        raise HTTPException(status_code=404, detail="Workplace not found")
-    return workplace
-
-
-async def _get_shift_expanded(session, shift_id: str) -> Shift:
-    res = await session.execute(
-        select(Shift)
-        .options(selectinload(Shift.orders).selectinload(Order.items))
-        .where(Shift.id == shift_id)
-    )
-    shift = res.scalars().first()
-    if not shift:
-        raise HTTPException(status_code=404, detail="Shift not found")
-    return shift
-
-
-async def _recalc_shift_aggregates(session, shift_id: str) -> None:
-    """Best-effort recalculation of shift aggregates.
-
-    This is intentionally minimal (MVP):
-    - order_count
-    - total_tips
-    - total_cash_register
-    - duration (if shift closed)
-    """
-    shift = await session.get(Shift, shift_id)
-    if not shift:
-        return
-    res = await session.execute(select(Order).where(Order.shift_id == shift_id))
-    orders = list(res.scalars().all())
-
-    shift.order_count = len(orders)
-    shift.total_tips = float(sum((o.tips or 0) for o in orders))
-    shift.total_cash_register = float(sum((o.total_price or 0) for o in orders if o.is_paid))
-    if shift.is_closed and shift.end_time and shift.end_time >= shift.start_time:
-        shift.duration = int(shift.end_time - shift.start_time)
-
-
-async def _next_workplace_position(session, user_id: int) -> int:
-    """Compute next workplace position for a given user."""
-    last_pos = await session.scalar(
-        select(Workplace.position)
-        .where(Workplace.user_id == user_id)
-        .order_by(Workplace.position.desc())
-        .limit(1)
-    )
-    return int(last_pos + 1) if last_pos is not None else 0
-
-
-async def _create_workplace(
-    session,
-    *,
-    user_id: int,
-    title: str,
-    timezone: str,
-    currency: str,
-    service_percent_default: int,
-    shift_type_default: str,
-    pay_for_shift_default: float,
-    position: Optional[int] = None,
-    workplace_id: Optional[str] = None,
-) -> Workplace:
-    """Create a workplace for a user (does not commit)."""
-    pos = position if position is not None else await _next_workplace_position(session, user_id)
-
-    wp = Workplace(
-        id=workplace_id or gen_id("WPL"),
-        user_id=user_id,
-        title=title,
-        timezone=timezone,
-        currency=currency,
-        service_percent_default=int(service_percent_default),
-        shift_type_default=shift_type_default,
-        pay_for_shift_default=float(pay_for_shift_default),
-        position=int(pos),
-        is_archived=False,
-    )
-    session.add(wp)
-    await session.flush()  # make wp.id available
-    return wp
-
-
-async def _create_first_hall(
-    session,
-    *,
-    workplace_id: str,
-    name: str = "Основной зал",
-    width: int = 1000,
-    height: int = 600,
-    scale: float = 1.0,
-    hall_id: Optional[str] = None,
-) -> Hall:
-    """Create the first hall for a workplace (does not commit)."""
-    hall = Hall(
-        id=hall_id or gen_id("HALL"),
-        workplace_id=workplace_id,
-        name=name,
-        position=0,
-        width=int(width),
-        height=int(height),
-        scale=float(scale),
-    )
-    session.add(hall)
-    await session.flush()
-    return hall
-
-# =========================
-# Pydantic Schemas
-# =========================
-
-
-class _BaseOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True, use_enum_values=True)
-
-
-class WorkplaceLiteOut(_BaseOut):
-    id: str
-    title: str
-
-
-class UserOut(_BaseOut):
-    id: int
-    tg_id: int
-    username: Optional[str] = None
-    language: str
-    timezone: str
-    last_online_at: Optional[int] = None
-    last_workplace_id: Optional[str] = None
-    is_onboarding_completed: bool
-    is_disabled: bool
-    created_at: int
-    updated_at: int
-
-
-class NoteOut(_BaseOut):
-    id: str
-    user_id: int
-    scope: str
-    workplace_id: Optional[str] = None
-    shift_id: Optional[str] = None
-    header: str
-    content: Optional[str] = None
-    pinned: bool
-    archived: bool
-    created_at: int
-    updated_at: int
-
-
-class ProfileResponse(BaseModel):
-    user: UserOut
-    notes: List[NoteOut]
-    workplaces: List[WorkplaceLiteOut]
-
-
-class TableOut(_BaseOut):
-    id: str
-    hall_id: str
-    order_id: Optional[str] = None
-    number: int
-    x: float
-    y: float
-    width: int
-    height: int
-    rotation: int
-    border_radius: int
-    status: str
-
-
-class HallOut(_BaseOut):
-    id: str
-    workplace_id: str
-    name: str
-    position: int
-    width: int
-    height: int
-    scale: float
-    tables: List[TableOut] = Field(default_factory=list)
-
-
-class MenuItemOut(_BaseOut):
-    id: str
-    category_id: str
-    title: str
-    description: Optional[str] = None
-    portion: Optional[str] = None
-    price: float
-    position: int
-    is_active: bool
-
-
-class MenuCategoryOut(_BaseOut):
-    id: str
-    workplace_id: str
-    title: str
-    position: int
-    is_active: bool
-    items: List[MenuItemOut] = Field(default_factory=list)
-
-
-class ShiftOut(_BaseOut):
-    id: str
-    workplace_id: str
-    start_time: int
-    is_closed: bool
-    end_time: int
-    place_work_title: str
-    currency: str
-    service_percent: int
-    shift_type: str
-    pay_for_shift: float
-    total_pay_for_shift: float
-    total_tips: float
-    total_cash_register: float
-    order_count: int
-    duration: int
-
-
-class OrderItemOut(_BaseOut):
-    id: str
-    order_id: str
-    menu_item_id: Optional[str] = None
-    title: str
-    price: float
-    quantity: int
-    total_price: float
-    comment: Optional[str] = None
-
-
-class OrderOut(_BaseOut):
-    id: str
-    shift_id: str
-    hall_id: Optional[str] = None
-    table_id: Optional[str] = None
-    table_number: Optional[int] = None
-    hall_name: Optional[str] = None
-    comments: Optional[str] = None
-    created_at: int
-    updated_at: int
-    closed_at: int
-    tips: float
-    total_price: float
-    is_paid: bool
-    is_done: bool
-    items: List[OrderItemOut] = Field(default_factory=list)
-
-
-class WorkplaceOut(_BaseOut):
-    id: str
-    user_id: int
-    title: str
-    timezone: str
-    currency: str
-    service_percent_default: int
-    shift_type_default: str
-    pay_for_shift_default: float
-    position: int
-    is_archived: bool
-    created_at: int
-    updated_at: int
-
-
-class WorkplaceExpandedResponse(WorkplaceOut):
-    halls: List[HallOut] = Field(default_factory=list)
-    menu_categories: List[MenuCategoryOut] = Field(default_factory=list)
-    shifts: List[ShiftOut] = Field(default_factory=list)
-    notes: List[NoteOut] = Field(default_factory=list)
+class BatchDeleteResponse(BaseModel):
+    requested: Dict[str, int]
+    deleted: Dict[str, int]
+    total_deleted: int
 
 
 # =========================
-# Request Schemas
+# Batch delete: registry
 # =========================
 
+# Важно: для "users_by_tg_id" используем не PK, а tg_id колонку.
+MODEL_REGISTRY: Dict[str, Tuple[type, Column, type]] = {
+    "users": (User, User.__table__.c.id, int),
+    "users_by_tg_id": (User, User.__table__.c.tg_id, int),
 
-class UserCreateRequest(BaseModel):
-    id:int
-    tg_id: int
-    username: Optional[str] = None
+    "workplaces": (Workplace, Workplace.__table__.c.id, str),
+    "halls": (Hall, Hall.__table__.c.id, str),
+    "tables": (Table, Table.__table__.c.id, str),
 
-    # user defaults
-    language: str = "ru"
-    timezone: str = "Europe/Moscow"
-    last_online_at: Optional[int] = None
-    is_onboarding_completed: bool = False
-    is_disabled: bool = False
+    "menu_categories": (MenuCategory, MenuCategory.__table__.c.id, str),
+    "menu_items": (MenuItem, MenuItem.__table__.c.id, str),
 
-    # initial workplace defaults
-    workplace_title: str = "Waiter Note"
-    currency: str = "RUB"
-    service_percent_default: int = Field(default=0, ge=0, le=100)
-    shift_type_default: str = "fixed"
-    pay_for_shift_default: float = 0
+    "shifts": (Shift, Shift.__table__.c.id, str),
+    "orders": (Order, Order.__table__.c.id, str),
+    "order_items": (OrderItem, OrderItem.__table__.c.id, str),
 
-    # initial hall defaults
-    create_default_hall: bool = True
-    default_hall_name: str = "Основной зал"
-    hall_width: int = 1000
-    hall_height: int = 600
-    hall_scale: float = 1.0
+    "notes": (Notes, Notes.__table__.c.id, str),
+}
 
 
-class WorkplaceCreateRequest(BaseModel):
-    id: Optional[str] = None
-    title: str = "Waiter Note"
-    timezone: Optional[str] = None
-    currency: str = "RUB"
-    service_percent_default: int = Field(default=0, ge=0, le=100)
-    shift_type_default: str = "fixed"
-    pay_for_shift_default: float = 0
-    position: Optional[int] = None
-
-    # behavior
-    make_last: bool = True
-
-    # hall defaults
-    create_default_hall: bool = True
-    default_hall_name: str = "Основной зал"
-    hall_width: int = 1000
-    hall_height: int = 600
-    hall_scale: float = 1.0
-
-
-class UserPatchRequest(BaseModel):
-    username: Optional[str] = None
-    language: Optional[str] = None
-    timezone: Optional[str] = None
-    last_online_at: Optional[int] = None
-    last_workplace_id: Optional[str] = None
-    is_onboarding_completed: Optional[bool] = None
-    is_disabled: Optional[bool] = None
+def _cast_ids(ids: List[Union[str, int]], caster: type) -> List[Union[str, int]]:
+    out: List[Union[str, int]] = []
+    for v in ids:
+        if caster is int:
+            try:
+                out.append(int(v))
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=422, detail=f"Invalid int id: {v}")
+        else:
+            # str
+            if v is None:
+                raise HTTPException(status_code=422, detail="Invalid str id: null")
+            out.append(str(v))
+    # убираем дубли, сохраняя порядок
+    seen = set()
+    uniq = []
+    for x in out:
+        if x not in seen:
+            seen.add(x)
+            uniq.append(x)
+    return uniq
 
 
-class HallCreateRequest(BaseModel):
-    id: Optional[str] = None
-    name: str
-    position: int = 0
-    width: int = 1000
-    height: int = 600
-    scale: float = 1.0
+async def batch_delete(session, req: BatchDeleteRequest) -> BatchDeleteResponse:
+    requested: Dict[str, int] = {}
+    deleted_counts: Dict[str, int] = {}
+    total_deleted = 0
 
+    # одна транзакция на всё
+    async with session.begin():
+        for op in req.ops:
+            if op.entity not in MODEL_REGISTRY:
+                raise HTTPException(status_code=400, detail=f"Unknown entity: {op.entity}")
 
-class HallPatchRequest(BaseModel):
-    name: Optional[str] = None
-    position: Optional[int] = None
-    width: Optional[int] = None
-    height: Optional[int] = None
-    scale: Optional[float] = None
+            model, key_col, caster = MODEL_REGISTRY[op.entity]
+            ids = _cast_ids(op.ids, caster)
 
+            requested[op.entity] = len(ids)
 
-class TableCreateRequest(BaseModel):
-    id: Optional[str] = None
-    number: int
-    x: float = 0
-    y: float = 0
-    width: int = 100
-    height: int = 100
-    rotation: int = 0
-    border_radius: int = 15
-    status: str = "free"
+            stmt = delete(model).where(key_col.in_(ids))
+            result = await session.execute(stmt)
 
+            # result.rowcount в asyncpg обычно доступен
+            rowcount = int(result.rowcount or 0)
 
-class TablePatchRequest(BaseModel):
-    order_id: Optional[str] = None
-    number: Optional[int] = None
-    x: Optional[float] = None
-    y: Optional[float] = None
-    width: Optional[int] = None
-    height: Optional[int] = None
-    rotation: Optional[int] = None
-    border_radius: Optional[int] = None
-    status: Optional[str] = None
+            if req.strict and rowcount == 0:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Nothing deleted for entity={op.entity} ids={ids}",
+                )
 
+            deleted_counts[op.entity] = rowcount
+            total_deleted += rowcount
 
-class MenuCategoryCreateRequest(BaseModel):
-    id: Optional[str] = None
-    title: str
-    position: int = 0
-    is_active: bool = True
-
-
-class MenuCategoryPatchRequest(BaseModel):
-    title: Optional[str] = None
-    position: Optional[int] = None
-    is_active: Optional[bool] = None
-
-
-class MenuItemCreateRequest(BaseModel):
-    id: Optional[str] = None
-    title: str
-    description: Optional[str] = None
-    portion: Optional[str] = None
-    price: float
-    position: int = 0
-    is_active: bool = True
-
-
-class MenuItemPatchRequest(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    portion: Optional[str] = None
-    price: Optional[float] = None
-    position: Optional[int] = None
-    is_active: Optional[bool] = None
-
-
-class ShiftCreateRequest(BaseModel):
-    id: Optional[str] = None
-    start_time: Optional[int] = None
-    # overrides (optional)
-    service_percent: Optional[int] = None
-    shift_type: Optional[str] = None
-    pay_for_shift: Optional[float] = None
-
-
-class ShiftPatchRequest(BaseModel):
-    is_closed: Optional[bool] = None
-    end_time: Optional[int] = None
-    service_percent: Optional[int] = None
-    shift_type: Optional[str] = None
-    pay_for_shift: Optional[float] = None
-
-
-class OrderItemCreateRequest(BaseModel):
-    id: Optional[str] = None
-    menu_item_id: Optional[str] = None
-    title: str
-    price: float
-    quantity: int = 1
-    comment: Optional[str] = None
-
-
-class OrderCreateRequest(BaseModel):
-    id: Optional[str] = None
-    hall_id: Optional[str] = None
-    table_id: Optional[str] = None
-    comments: Optional[str] = None
-    tips: float = 0
-    total_price: float = 0
-    items: List[OrderItemCreateRequest] = Field(default_factory=list)
-
-
-class OrderPatchRequest(BaseModel):
-    hall_id: Optional[str] = None
-    table_id: Optional[str] = None
-    comments: Optional[str] = None
-    tips: Optional[float] = None
-    total_price: Optional[float] = None
-    is_paid: Optional[bool] = None
-    is_done: Optional[bool] = None
-    closed_at: Optional[int] = None
-
-
-class OrderItemPatchRequest(BaseModel):
-    menu_item_id: Optional[str] = None
-    title: Optional[str] = None
-    price: Optional[float] = None
-    quantity: Optional[int] = None
-    comment: Optional[str] = None
-
+    return BatchDeleteResponse(
+        requested=requested,
+        deleted=deleted_counts,
+        total_deleted=total_deleted,
+    )
 
 # =========================
 # FastAPI app
@@ -577,6 +171,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Waiter Note API", lifespan=lifespan)
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(request: Request, exc: IntegrityError):
+    # важно для оффлайн-синка: повторный create -> 409, а не 500
+    return JSONResponse(status_code=409, content={"detail": "Already exists"})
 
 app.add_middleware(
     CORSMiddleware,
@@ -594,721 +192,651 @@ app.add_middleware(
 # Routers
 # =========================
 
-
+admin_router = APIRouter(prefix="/api", tags=["batch"])
 users_router = APIRouter(prefix="/api/users", tags=["users"])
 workplaces_router = APIRouter(prefix="/api/workplaces", tags=["workplaces"])
 hall_router = APIRouter(prefix="/api", tags=["halls"])
 menu_router = APIRouter(prefix="/api", tags=["menu"])
 shifts_router = APIRouter(prefix="/api", tags=["shifts"])
-orders_router = APIRouter(prefix="/api", tags=["orders"])
 
 
-# -------------------------
-# Profile / User
-# -------------------------
+# =========================
+# Helpers
+# =========================
 
+async def gen_id(prefix: str) -> str:
+    """Generate an ID that fits models.ID21 (String(21)).
 
-@users_router.post("", response_model=ProfileResponse)
-async def create_user(payload: UserCreateRequest, response: Response):
-    """Create user (by tg_id) and bootstrap first workplace + first hall.
+    Project uses IDs like:
+      - WPL00000000000000001  (len(prefix_with_underscore)=4  -> 17 digits)
+      - HALL0000000000000001  (len(prefix_with_underscore)=5  -> 16 digits)
 
-    If user already exists, returns existing profile payload (idempotent).
+    We therefore compute suffix length dynamically to keep total length == 21.
     """
+
+    if not prefix:
+        raise ValueError("prefix must be non-empty")
+    p = prefix.upper().rstrip("_")
+    if not p.isalnum():
+        raise ValueError("prefix must be alphanumeric")
+
+    prefixx = f"{p}"
+    digits_len = 21 - len(prefixx)
+    if digits_len <= 0:
+        raise ValueError("prefix is too long for ID21")
+
+    suffix = "".join(secrets.choice(string.digits) for _ in range(digits_len))
+    return f"{prefixx}{suffix}"
+
+
+@admin_router.post("/batch-delete", response_model=BatchDeleteResponse, status_code=200)
+async def api_batch_delete(req: BatchDeleteRequest):
     async with async_session() as session:
-        # Fast path: already exists
-        existing = await session.scalar(select(User).where(User.tg_id == payload.tg_id))
-        if existing:
-            response.status_code = 200
-            user = await _get_user_by_tg_id(session, payload.tg_id)
-            workplaces_sorted = sorted(user.workplaces, key=lambda w: (w.position, w.created_at))
-            notes_sorted = sorted(user.notes, key=lambda n: n.updated_at, reverse=True)
-            return ProfileResponse(
-                user=UserOut.model_validate(user),
-                notes=[NoteOut.model_validate(n) for n in notes_sorted],
-                workplaces=[WorkplaceLiteOut.model_validate(w) for w in workplaces_sorted],
-            )
-
-        response.status_code = 201
-
-        user = User(
-           id=payload.id,
-            tg_id=payload.tg_id,
-            username=payload.username,
-            language=payload.language,
-            timezone=payload.timezone,
-            last_online_at=payload.last_online_at,
-            is_onboarding_completed=bool(payload.is_onboarding_completed),
-            is_disabled=bool(payload.is_disabled),
-        )
-        session.add(user)
-
-        try:
-            await session.flush()  # user.id assigned
-
-            wp = await _create_workplace(
-                session,
-                user_id=user.id,
-                title=payload.workplace_title,
-                timezone=payload.timezone,
-                currency=payload.currency,
-                service_percent_default=payload.service_percent_default,
-                shift_type_default=payload.shift_type_default,
-                pay_for_shift_default=payload.pay_for_shift_default,
-            )
-
-            # Make it active
-            user.last_workplace_id = wp.id
-
-            # Create initial hall
-            if payload.create_default_hall:
-                await _create_first_hall(
-                    session,
-                    workplace_id=wp.id,
-                    name=payload.default_hall_name,
-                    width=payload.hall_width,
-                    height=payload.hall_height,
-                    scale=payload.hall_scale,
-                )
-
-            await session.commit()
-        except IntegrityError:
-            # If a concurrent request created the user/workplace first
-            await session.rollback()
-            response.status_code = 200
-        except Exception:
-            await session.rollback()
-            raise
-
-        user = await _get_user_by_tg_id(session, payload.tg_id)
-        workplaces_sorted = sorted(user.workplaces, key=lambda w: (w.position, w.created_at))
-        notes_sorted = sorted(user.notes, key=lambda n: n.updated_at, reverse=True)
-        return ProfileResponse(
-            user=UserOut.model_validate(user),
-            notes=[NoteOut.model_validate(n) for n in notes_sorted],
-            workplaces=[WorkplaceLiteOut.model_validate(w) for w in workplaces_sorted],
-        )
-
-
-@users_router.post("/{tg_id}/workplaces", response_model=WorkplaceOut)
-async def create_workplace_for_user(tg_id: int, payload: WorkplaceCreateRequest, response: Response):
-    """Create a workplace for an existing user (+ optional default hall).
-
-    Returns created workplace.
-    """
-    async with async_session() as session:
-        user = await _get_user_by_tg_id(session, tg_id)
-
-        # If timezone not passed, inherit from user
-        tz = payload.timezone or user.timezone
-
-        wp = await _create_workplace(
-            session,
-            user_id=user.id,
-            title=payload.title,
-            timezone=tz,
-            currency=payload.currency,
-            service_percent_default=payload.service_percent_default,
-            shift_type_default=payload.shift_type_default,
-            pay_for_shift_default=payload.pay_for_shift_default,
-            position=payload.position,
-            workplace_id=payload.id,
-        )
-
-        if payload.create_default_hall:
-            await _create_first_hall(
-                session,
-                workplace_id=wp.id,
-                name=payload.default_hall_name,
-                width=payload.hall_width,
-                height=payload.hall_height,
-                scale=payload.hall_scale,
-            )
-
-        if payload.make_last:
-            user.last_workplace_id = wp.id
-
+        res = await batch_delete(session, req)
         await session.commit()
-        await session.refresh(wp)
+        return res
 
-        response.status_code = 201
-        return WorkplaceOut.model_validate(wp)
-
-@users_router.get("/{tg_id}/profile", response_model=ProfileResponse)
-async def get_profile(tg_id: int):
-    """Profile bootstrap.
-
-    Front sends: tg_id
-    Back returns: user + notes + workplaces (id/title)
-    """
+# -------------------------
+# api reqqs
+# -------------------------
+@users_router.patch("/{tg_id}", status_code=200)
+async def update_user(tg_id: int, data: UserPatchUpdate):
+    """Update an existing user."""
     async with async_session() as session:
-        user = await _get_user_by_tg_id(session, tg_id)
+        async with session.begin():
+            result = await session.execute(
+                select(User).where(User.tg_id == tg_id)
+            )
+            user = result.scalar_one_or_none()
+            if user is None:
+                raise HTTPException(status_code=404, detail="User not found")
 
-        # sort workplaces by position (stable UI)
-        workplaces_sorted = sorted(user.workplaces, key=lambda w: (w.position, w.created_at))
-        # notes by updated_at desc
-        notes_sorted = sorted(user.notes, key=lambda n: n.updated_at, reverse=True)
-
-        return ProfileResponse(
-            user=UserOut.model_validate(user),
-            notes=[NoteOut.model_validate(n) for n in notes_sorted],
-            workplaces=[WorkplaceLiteOut.model_validate(w) for w in workplaces_sorted],
-        )
-
-
-@users_router.patch("/{tg_id}", response_model=UserOut)
-async def patch_user(tg_id: int, patch: UserPatchRequest):
-    """Patch user fields (including last_workplace_id)."""
-    async with async_session() as session:
-        user = await _get_user_by_tg_id(session, tg_id)
-        data = patch.model_dump(exclude_unset=True)
-
-        # validate last_workplace_id ownership
-        if "last_workplace_id" in data and data["last_workplace_id"] is not None:
-            wp_ids = {w.id for w in user.workplaces}
-            if data["last_workplace_id"] not in wp_ids:
-                raise HTTPException(status_code=400, detail="last_workplace_id does not belong to this user")
-
-        for k, v in data.items():
-            setattr(user, k, v)
-
+            update_data = data.model_dump(exclude_unset=True)
+            for key, value in update_data.items():
+                setattr(user, key, value)
+            user.updated_at = utc_ts()
         await session.commit()
         await session.refresh(user)
-        return UserOut.model_validate(user)
-
-
-# -------------------------
-# Workplace (expanded)
-# -------------------------
-
-
-@workplaces_router.get("/{workplace_id}/expanded", response_model=WorkplaceExpandedResponse)
-async def get_workplace_expanded(workplace_id: str):
-    """Workplace context payload.
-
-    Used on profile workplace switch and on app boot (by user.last_workplace_id).
-    """
+        return "User updated successfully"
+@users_router.get("/{tg_id}", response_model=UserResponse)
+async def get_user(tg_id: int):
     async with async_session() as session:
-        workplace = await _get_workplace_expanded(session, workplace_id)
-
-        # Sort nested lists for stable UI
-        workplace.halls.sort(key=lambda h: h.position)
-        for h in workplace.halls:
-            h.tables.sort(key=lambda t: t.number)
-        workplace.menu_categories.sort(key=lambda c: c.position)
-        for c in workplace.menu_categories:
-            c.items.sort(key=lambda i: i.position)
-        workplace.shifts.sort(key=lambda s: s.start_time, reverse=True)
-        workplace.notes.sort(key=lambda n: n.updated_at, reverse=True)
-
-        return WorkplaceExpandedResponse.model_validate(workplace)
-
-
-# -------------------------
-# Halls
-# -------------------------
-
-
-@hall_router.get("/workplaces/{workplace_id}/halls", response_model=List[HallOut])
-async def list_halls(workplace_id: str):
-    async with async_session() as session:
-        res = await session.execute(
-            select(Hall)
-            .options(selectinload(Hall.tables))
-            .where(Hall.workplace_id == workplace_id)
+        stmt = (
+            select(User)
+            .where(User.tg_id == tg_id)
+            .options(selectinload(User.workplaces))
         )
-        halls = list(res.scalars().all())
-        halls.sort(key=lambda h: h.position)
-        for h in halls:
-            h.tables.sort(key=lambda t: t.number)
-        return [HallOut.model_validate(h) for h in halls]
+        user = await session.scalar(stmt)
+
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # сортировка по position (если важно)
+        user.workplaces.sort(key=lambda w: w.position)
+
+        return UserResponse.model_validate(user)
 
 
-@hall_router.post("/workplaces/{workplace_id}/halls", response_model=HallOut)
-async def create_hall(workplace_id: str, payload: HallCreateRequest):
+@users_router.post("/", status_code=201)
+async def create_user(req: UserCreateRequest):
+    """Create a new user."""
     async with async_session() as session:
-        # ensure workplace exists
-        wp = await session.get(Workplace, workplace_id)
-        if not wp:
-            raise HTTPException(status_code=404, detail="Workplace not found")
-
-        hall = Hall(
-            id=payload.id or gen_id("HALL"),
-            workplace_id=workplace_id,
-            name=payload.name,
-            position=payload.position,
-            width=payload.width,
-            height=payload.height,
-            scale=payload.scale,
-        )
-
-        session.add(hall)
-        await session.commit()
-        await session.refresh(hall)
-        return HallOut.model_validate(hall)
-
-
-@hall_router.patch("/halls/{hall_id}", response_model=HallOut)
-async def patch_hall(hall_id: str, patch: HallPatchRequest):
-    async with async_session() as session:
-        hall = await session.get(Hall, hall_id, options=[selectinload(Hall.tables)])
-        if not hall:
-            raise HTTPException(status_code=404, detail="Hall not found")
-
-        data = patch.model_dump(exclude_unset=True)
-        for k, v in data.items():
-            setattr(hall, k, v)
-
-        await session.commit()
-        await session.refresh(hall)
-        return HallOut.model_validate(hall)
-
-
-# -------------------------
-# Tables
-# -------------------------
-
-
-@hall_router.get("/halls/{hall_id}/tables", response_model=List[TableOut])
-async def list_tables(hall_id: str):
-    async with async_session() as session:
-        res = await session.execute(select(Table).where(Table.hall_id == hall_id))
-        tables = list(res.scalars().all())
-        tables.sort(key=lambda t: t.number)
-        return [TableOut.model_validate(t) for t in tables]
-
-
-@hall_router.post("/halls/{hall_id}/tables", response_model=TableOut)
-async def create_table(hall_id: str, payload: TableCreateRequest):
-    async with async_session() as session:
-        hall = await session.get(Hall, hall_id)
-        if not hall:
-            raise HTTPException(status_code=404, detail="Hall not found")
-
-        table = Table(
-            id=payload.id or gen_id("TBL"),
-            hall_id=hall_id,
-            number=payload.number,
-            x=payload.x,
-            y=payload.y,
-            width=payload.width,
-            height=payload.height,
-            rotation=payload.rotation,
-            border_radius=payload.border_radius,
-            status=payload.status,
-        )
-
-        session.add(table)
-        try:
-            await session.commit()
-        except Exception as e:  # pragma: no cover
-            await session.rollback()
-            # UniqueConstraint(hall_id, number)
-            raise HTTPException(status_code=400, detail=f"Cannot create table: {e}")
-
-        await session.refresh(table)
-        return TableOut.model_validate(table)
-
-
-@hall_router.patch("/tables/{table_id}", response_model=TableOut)
-async def patch_table(table_id: str, patch: TablePatchRequest):
-    async with async_session() as session:
-        table = await session.get(Table, table_id)
-        if not table:
-            raise HTTPException(status_code=404, detail="Table not found")
-
-        data = patch.model_dump(exclude_unset=True)
-        for k, v in data.items():
-            setattr(table, k, v)
-
-        try:
-            await session.commit()
-        except Exception as e:  # pragma: no cover
-            await session.rollback()
-            raise HTTPException(status_code=400, detail=f"Cannot patch table: {e}")
-
-        await session.refresh(table)
-        return TableOut.model_validate(table)
-
-
-# -------------------------
-# Menu
-# -------------------------
-
-
-@menu_router.get("/workplaces/{workplace_id}/menu", response_model=List[MenuCategoryOut])
-async def get_menu(workplace_id: str, active_only: bool = Query(default=False)):
-    async with async_session() as session:
-        q = select(MenuCategory).options(selectinload(MenuCategory.items)).where(MenuCategory.workplace_id == workplace_id)
-        if active_only:
-            q = q.where(MenuCategory.is_active.is_(True))
-        res = await session.execute(q)
-        categories = list(res.scalars().all())
-        categories.sort(key=lambda c: c.position)
-        for c in categories:
-            c.items.sort(key=lambda i: i.position)
-            if active_only:
-                c.items = [i for i in c.items if i.is_active]
-        return [MenuCategoryOut.model_validate(c) for c in categories]
-
-
-@menu_router.post("/workplaces/{workplace_id}/menu/categories", response_model=MenuCategoryOut)
-async def create_menu_category(workplace_id: str, payload: MenuCategoryCreateRequest):
-    async with async_session() as session:
-        wp = await session.get(Workplace, workplace_id)
-        if not wp:
-            raise HTTPException(status_code=404, detail="Workplace not found")
-
-        cat = MenuCategory(
-            id=payload.id or gen_id("CAT"),
-            workplace_id=workplace_id,
-            title=payload.title,
-            position=payload.position,
-            is_active=payload.is_active,
-        )
-        session.add(cat)
-        await session.commit()
-        await session.refresh(cat)
-        return MenuCategoryOut.model_validate(cat)
-
-
-@menu_router.patch("/menu/categories/{category_id}", response_model=MenuCategoryOut)
-async def patch_menu_category(category_id: str, patch: MenuCategoryPatchRequest):
-    async with async_session() as session:
-        cat = await session.get(MenuCategory, category_id, options=[selectinload(MenuCategory.items)])
-        if not cat:
-            raise HTTPException(status_code=404, detail="Menu category not found")
-
-        data = patch.model_dump(exclude_unset=True)
-        for k, v in data.items():
-            setattr(cat, k, v)
-
-        await session.commit()
-        await session.refresh(cat)
-        return MenuCategoryOut.model_validate(cat)
-
-
-@menu_router.post("/menu/categories/{category_id}/items", response_model=MenuItemOut)
-async def create_menu_item(category_id: str, payload: MenuItemCreateRequest):
-    async with async_session() as session:
-        cat = await session.get(MenuCategory, category_id)
-        if not cat:
-            raise HTTPException(status_code=404, detail="Menu category not found")
-
-        item = MenuItem(
-            id=payload.id or gen_id("MNU"),
-            category_id=category_id,
-            title=payload.title,
-            description=payload.description,
-            portion=payload.portion,
-            price=payload.price,
-            position=payload.position,
-            is_active=payload.is_active,
-        )
-        session.add(item)
-        await session.commit()
-        await session.refresh(item)
-        return MenuItemOut.model_validate(item)
-
-
-@menu_router.patch("/menu/items/{item_id}", response_model=MenuItemOut)
-async def patch_menu_item(item_id: str, patch: MenuItemPatchRequest):
-    async with async_session() as session:
-        item = await session.get(MenuItem, item_id)
-        if not item:
-            raise HTTPException(status_code=404, detail="Menu item not found")
-
-        data = patch.model_dump(exclude_unset=True)
-        for k, v in data.items():
-            setattr(item, k, v)
-
-        await session.commit()
-        await session.refresh(item)
-        return MenuItemOut.model_validate(item)
-
-
-# -------------------------
-# Shifts
-# -------------------------
-
-
-@shifts_router.get("/workplaces/{workplace_id}/shifts", response_model=List[ShiftOut])
-async def list_shifts(workplace_id: str, limit: int = Query(default=50, ge=1, le=200)):
-    async with async_session() as session:
-        res = await session.execute(
-            select(Shift)
-            .where(Shift.workplace_id == workplace_id)
-            .order_by(Shift.start_time.desc())
-            .limit(limit)
-        )
-        shifts = list(res.scalars().all())
-        return [ShiftOut.model_validate(s) for s in shifts]
-
-
-@shifts_router.post("/workplaces/{workplace_id}/shifts", response_model=ShiftOut)
-async def create_shift(workplace_id: str, payload: ShiftCreateRequest):
-    """Open shift for workplace.
-
-    MVP rule: only one open shift per workplace. If one already exists, return it.
-    """
-    async with async_session() as session:
-        wp = await session.get(Workplace, workplace_id)
-        if not wp:
-            raise HTTPException(status_code=404, detail="Workplace not found")
-
-        existing_open = await session.scalar(
-            select(Shift).where(Shift.workplace_id == workplace_id, Shift.is_closed.is_(False))
-        )
-        if existing_open:
-            return ShiftOut.model_validate(existing_open)
-
-        shift = Shift(
-            id=payload.id or gen_id("SFT"),
-            workplace_id=workplace_id,
-            start_time=payload.start_time or utc_ts(),
-            is_closed=False,
-            end_time=0,
-            place_work_title=wp.title,
-            currency=wp.currency,
-            service_percent=payload.service_percent if payload.service_percent is not None else wp.service_percent_default,
-            shift_type=payload.shift_type if payload.shift_type is not None else wp.shift_type_default,
-            pay_for_shift=float(payload.pay_for_shift) if payload.pay_for_shift is not None else float(wp.pay_for_shift_default),
-            total_pay_for_shift=float(payload.pay_for_shift) if payload.pay_for_shift is not None else float(wp.pay_for_shift_default),
-            total_tips=0,
-            total_cash_register=0,
-            order_count=0,
-            duration=0,
-        )
-
-        session.add(shift)
-        await session.commit()
-        await session.refresh(shift)
-        return ShiftOut.model_validate(shift)
-
-
-@shifts_router.get("/shifts/{shift_id}", response_model=ShiftOut)
-async def get_shift(shift_id: str):
-    async with async_session() as session:
-        shift = await session.get(Shift, shift_id)
-        if not shift:
-            raise HTTPException(status_code=404, detail="Shift not found")
-        return ShiftOut.model_validate(shift)
-
-
-@shifts_router.patch("/shifts/{shift_id}", response_model=ShiftOut)
-async def patch_shift(shift_id: str, patch: ShiftPatchRequest):
-    async with async_session() as session:
-        shift = await session.get(Shift, shift_id)
-        if not shift:
-            raise HTTPException(status_code=404, detail="Shift not found")
-
-        data = patch.model_dump(exclude_unset=True)
-        for k, v in data.items():
-            setattr(shift, k, v)
-
-        # convenience: if closing shift without end_time
-        if shift.is_closed and (not shift.end_time):
-            shift.end_time = utc_ts()
-
-        await _recalc_shift_aggregates(session, shift_id)
-        await session.commit()
-        await session.refresh(shift)
-        return ShiftOut.model_validate(shift)
-
-
-# -------------------------
-# Orders
-# -------------------------
-
-
-@orders_router.get("/shifts/{shift_id}/orders", response_model=List[OrderOut])
-async def list_orders(shift_id: str):
-    async with async_session() as session:
-        res = await session.execute(
-            select(Order)
-            .options(selectinload(Order.items))
-            .where(Order.shift_id == shift_id)
-            .order_by(Order.created_at.desc())
-        )
-        orders = list(res.scalars().all())
-        return [OrderOut.model_validate(o) for o in orders]
-
-
-@orders_router.post("/shifts/{shift_id}/orders", response_model=OrderOut)
-async def create_order(shift_id: str, payload: OrderCreateRequest):
-    async with async_session() as session:
-        shift = await session.get(Shift, shift_id)
-        if not shift:
-            raise HTTPException(status_code=404, detail="Shift not found")
-        if shift.is_closed:
-            raise HTTPException(status_code=409, detail="Shift is closed")
-
-        hall_name: Optional[str] = None
-        table_number: Optional[int] = None
-
-        if payload.hall_id:
-            hall = await session.get(Hall, payload.hall_id)
-            if not hall:
-                raise HTTPException(status_code=404, detail="Hall not found")
-            hall_name = hall.name
-
-        if payload.table_id:
-            table = await session.get(Table, payload.table_id)
-            if not table:
-                raise HTTPException(status_code=404, detail="Table not found")
-            table_number = table.number
-
-        order = Order(
-            id=payload.id or gen_id("ORD"),
-            shift_id=shift_id,
-            hall_id=payload.hall_id,
-            table_id=payload.table_id,
-            table_number=table_number,
-            hall_name=hall_name,
-            comments=payload.comments,
-            created_at=utc_ts(),
-            updated_at=utc_ts(),
-            closed_at=0,
-            tips=float(payload.tips or 0),
-            total_price=float(payload.total_price or 0),
-            is_paid=False,
-            is_done=False,
-        )
-        session.add(order)
-        await session.flush()  # order.id available for items
-
-        # order items
-        for it in payload.items:
-            oi = OrderItem(
-                id=it.id or gen_id("ITM"),
-                order_id=order.id,
-                menu_item_id=it.menu_item_id,
-                title=it.title,
-                price=float(it.price),
-                quantity=int(it.quantity),
-                total_price=float(it.price) * int(it.quantity),
-                comment=it.comment,
+        async with session.begin():
+            user = User(
+                id=req.id,
+                tg_id=req.tg_id,
+                username=req.username,
+                language=req.language,
+                timezone=req.timezone,
+                is_onboarding_completed=False,
+                is_disabled=False,
+                created_at=utc_ts(),
+                updated_at=utc_ts(),
             )
-            session.add(oi)
-
-        # Update table UI cache
-        if payload.table_id:
-            table = await session.get(Table, payload.table_id)
-            if table:
-                table.order_id = order.id
-                table.status = "occupied"
-
-        await _recalc_shift_aggregates(session, shift_id)
+            session.add(user)
         await session.commit()
-
-        order = await session.get(Order, order.id, options=[selectinload(Order.items)])
-        return OrderOut.model_validate(order)
-
-
-@orders_router.patch("/orders/{order_id}", response_model=OrderOut)
-async def patch_order(order_id: str, patch: OrderPatchRequest):
+        await session.refresh(user)
+        return "User created successfully"
+    
+@workplaces_router.patch("/{workplace_id}", status_code=200)
+async def update_workplace(workplace_id: str, req: WorkplacePatchUpdate):
+    """Update an existing workplace."""
     async with async_session() as session:
-        order = await session.get(Order, order_id, options=[selectinload(Order.items)])
-        if not order:
-            raise HTTPException(status_code=404, detail="Order not found")
+        async with session.begin():
+            result = await session.execute(
+                select(Workplace).where(Workplace.id == workplace_id)
+            )
+            workplace = result.scalar_one_or_none()
+            if workplace is None:
+                raise HTTPException(status_code=404, detail="Workplace not found")
 
-        data = patch.model_dump(exclude_unset=True)
-        for k, v in data.items():
-            setattr(order, k, v)
-
-        order.updated_at = utc_ts()
-
-        # If paid: close order and free table UI cache
-        if order.is_paid:
-            if not order.closed_at:
-                order.closed_at = patch.closed_at or utc_ts()
-            if order.table_id:
-                table = await session.get(Table, order.table_id)
-                if table and table.order_id == order.id:
-                    table.order_id = None
-                    table.status = "free"
-
-        await _recalc_shift_aggregates(session, order.shift_id)
+            update_data = req.model_dump(exclude_unset=True)
+            for key, value in update_data.items():
+                setattr(workplace, key, value)
+            workplace.updated_at = utc_ts()
         await session.commit()
-        await session.refresh(order)
-        return OrderOut.model_validate(order)
-
-
-@orders_router.post("/orders/{order_id}/items", response_model=OrderItemOut)
-async def add_order_item(order_id: str, payload: OrderItemCreateRequest):
+        await session.refresh(workplace)
+        return "Workplace updated successfully"
+@workplaces_router.get("/{workplace_id}", response_model=WorkplaceResponse)
+async def get_workplace(workplace_id: str):
     async with async_session() as session:
-        order = await session.get(Order, order_id)
-        if not order:
-            raise HTTPException(status_code=404, detail="Order not found")
-        if order.is_paid:
-            raise HTTPException(status_code=409, detail="Order is already paid")
-
-        item = OrderItem(
-            id=payload.id or gen_id("ITM"),
-            order_id=order_id,
-            menu_item_id=payload.menu_item_id,
-            title=payload.title,
-            price=float(payload.price),
-            quantity=int(payload.quantity),
-            total_price=float(payload.price) * int(payload.quantity),
-            comment=payload.comment,
+        result = await session.execute(
+            select(Workplace).where(Workplace.id == workplace_id)
         )
-        session.add(item)
-
-        order.updated_at = utc_ts()
-        await session.commit()
-        await session.refresh(item)
-        return OrderItemOut.model_validate(item)
-
-
-@orders_router.patch("/order-items/{item_id}", response_model=OrderItemOut)
-async def patch_order_item(item_id: str, patch: OrderItemPatchRequest):
+        workplace = result.scalar_one_or_none()
+        if workplace is None:
+            raise HTTPException(status_code=404, detail="Workplace not found")
+        return WorkplaceResponse.model_validate(workplace)
+@workplaces_router.post("/", status_code=201)
+async def create_workplace(req: WorkplaceCreateRequest):
+    """Create a new workplace."""
     async with async_session() as session:
-        item = await session.get(OrderItem, item_id)
-        if not item:
-            raise HTTPException(status_code=404, detail="Order item not found")
+        async with session.begin():
+            workplace = Workplace(
+                id=req.id,
+                user_id=req.user_id,
+                
+                title=req.title,
+                timezone=req.timezone,
+                currency=req.currency,
 
-        data = patch.model_dump(exclude_unset=True)
-        for k, v in data.items():
-            setattr(item, k, v)
+                service_percent_default=req.service_percent_default,
+                shift_type_default=req.shift_type_default,
+                pay_for_shift_default=req.pay_for_shift_default,
 
-        # keep total_price consistent
-        if patch.price is not None or patch.quantity is not None:
-            item.total_price = float(item.price) * int(item.quantity)
+                position=req.position,
+                is_archived=req.is_archived,
 
-        order = await session.get(Order, item.order_id)
-        if order:
+                created_at=utc_ts(),
+                updated_at=utc_ts(),
+            )
+            session.add(workplace)
+        await session.commit()
+        await session.refresh(workplace)
+        return "Workplace created successfully"
+
+
+
+@shifts_router.get("/workplaces/{workplace_id}/shifts", response_model=List[ShiftInHistoryResponse])
+async def get_shifts_by_period_for_workplace(
+    workplace_id: str,
+    start_ts: Optional[int] = Query(None, alias="startTs"),
+    end_ts: Optional[int] = Query(None, alias="endTs"),
+):
+    async with async_session() as session:
+        stmt = select(Shift).where(Shift.workplace_id == workplace_id)
+
+        if start_ts is not None:
+            stmt = stmt.where(Shift.start_time >= start_ts)
+        if end_ts is not None:
+            stmt = stmt.where(Shift.start_time <= end_ts)
+
+        stmt = stmt.order_by(Shift.start_time.desc())
+
+        result = await session.execute(stmt)
+        shifts = result.scalars().all()
+
+        return [ShiftInHistoryResponse.model_validate(shift) for shift in shifts]
+
+@shifts_router.get("/workplaces/{workplace_id}/shifts/{shift_id}", response_model=ShiftResponse)
+async def get_shift_for_workplace_with_orders_and_order_items(workplace_id: str, shift_id: str):
+    async with async_session() as session:
+        stmt = (
+            select(Shift)
+            .where(Shift.workplace_id == workplace_id, Shift.id == shift_id)
+            .options(selectinload(Shift.orders).selectinload(Order.items))
+        )
+        result = await session.execute(stmt)
+        shift = result.scalar_one_or_none()
+        if shift is None:
+            raise HTTPException(status_code=404, detail="Shift not found")
+        return ShiftResponse.model_validate(shift)
+
+@shifts_router.patch(
+    "/workplaces/{workplace_id}/shifts/active/orders/{order_id}",
+    status_code=200,
+)
+async def update_order_with_items_for_active_shift(
+    workplace_id: str,
+    order_id: str,
+    req: OrderPatchUpdate,
+):
+    async with async_session() as session:
+        async with session.begin():
+            shift = await session.scalar(
+                select(Shift).where(Shift.workplace_id == workplace_id, Shift.is_closed == False)
+            )
+            if shift is None:
+                raise HTTPException(status_code=404, detail="Active shift not found")
+
+            order = await session.scalar(
+                select(Order).where(Order.id == order_id, Order.shift_id == shift.id)
+            )
+            if order is None:
+                raise HTTPException(status_code=404, detail="Order not found")
+
+            update_data = req.model_dump(exclude_unset=True, exclude={"items"})
+            for key, value in update_data.items():
+                setattr(order, key, value)
             order.updated_at = utc_ts()
 
+            await session.execute(delete(OrderItem).where(OrderItem.order_id == order.id))
+
+            if req.items is not None:
+                await session.execute(delete(OrderItem).where(OrderItem.order_id == order.id))
+                for item_req in (req.items or []):
+                    session.add(
+                        OrderItem(
+                            id=item_req.id,
+                            order_id=order.id,
+                            menu_item_id=item_req.menu_item_id,
+                            title=item_req.title,
+                            quantity=item_req.quantity,
+                            price=item_req.price,
+                            total_price=item_req.total_price,
+                            comment=item_req.comment,
+                        )
+                    )
+
+        await session.commit()
+        return "Order with items updated successfully"
+
+
+@shifts_router.post(
+    "/workplaces/{workplace_id}/shifts/active/orders",
+    status_code=201,
+)
+async def create_order_with_items_for_active_shift(workplace_id: str, req: OrderCreateRequest):
+    async with async_session() as session:
+        async with session.begin():
+            shift = await session.scalar(
+                select(Shift).where(Shift.workplace_id == workplace_id, Shift.is_closed == False)
+            )
+            if shift is None:
+                raise HTTPException(status_code=404, detail="Active shift not found")
+            order_id = req.id or await gen_id("ORD")
+            created_at = req.created_at or utc_ts()
+            order = Order(
+                id=order_id,
+                shift_id=shift.id,
+                hall_id=req.hall_id,
+                table_id=req.table_id,
+                table_number=req.table_number,
+                hall_name=req.hall_name,
+                comments=req.comments,
+                closed_at=0,
+
+                is_paid=req.is_paid,
+                is_done=req.is_done,
+                tips=req.tips,
+                total_price=req.total_price,
+
+                created_at=created_at,
+                updated_at=created_at,
+             )
+            session.add(order)
+
+
+            for item_req in (req.items or []):
+                 session.add(
+                     OrderItem(
+
+                        id=item_req.id or await gen_id("ORDITM"),
+                        order_id=order_id,
+                        menu_item_id=item_req.menu_item_id,
+                        title=item_req.title,
+                        quantity=item_req.quantity,
+                        price=item_req.price,
+                        total_price=item_req.total_price,
+                        comment=item_req.comment,
+                     )
+                 )
+
+        await session.commit()
+        return "Order with items created successfully"
+    
+        
+@shifts_router.get("/workplaces/{workplace_id}/shifts/active", response_model=ShiftResponse)
+async def get_active_shift_for_workplace_with_orders_and_order_items(workplace_id: str):
+    async with async_session() as session:
+        stmt = (
+            select(Shift)
+            .where(Shift.workplace_id == workplace_id, Shift.is_closed == False)
+            .options(selectinload(Shift.orders).selectinload(Order.items))
+        )
+        result = await session.execute(stmt)
+        shift = result.scalar_one_or_none()
+        if shift is None:
+            raise HTTPException(status_code=404, detail="Active shift not found")
+        return ShiftResponse.model_validate(shift)
+
+    
+@shifts_router.patch("/workplaces/{workplace_id}/shifts/{shift_id}", status_code=200)
+async def update_shift(workplace_id: str, shift_id: str, req: ShiftPatchUpdate):
+    """Update an existing shift."""
+    async with async_session() as session:
+        async with session.begin():
+            result = await session.execute(
+                select(Shift).where(
+                    Shift.id == shift_id,
+                    Shift.workplace_id == workplace_id,
+                )
+            )
+            shift = result.scalar_one_or_none()
+            if shift is None:
+                raise HTTPException(status_code=404, detail="Shift not found")
+
+            update_data = req.model_dump(exclude_unset=True)
+            for key, value in update_data.items():
+                setattr(shift, key, value)
+        await session.commit()
+        await session.refresh(shift)
+        return "Shift updated successfully"
+@shifts_router.post("/workplaces/{workplace_id}/shifts", status_code=201)
+async def create_shift_for_workplace(workplace_id: str, req: ShiftCreateRequest):
+    """Create a new shift for a workplace."""
+    async with async_session() as session:
+        async with session.begin():
+            shift = Shift(
+                id=req.id,
+                workplace_id=workplace_id,
+                start_time=req.start_time,
+                is_closed=False,
+                end_time=0,
+                place_work_title=req.place_work_title,
+                currency=req.currency,
+                pay_for_shift=req.pay_for_shift,
+                service_percent=req.service_percent,
+                shift_type=req.shift_type,
+                total_pay_for_shift=0,
+                total_tips=0,
+                total_cash_register=0,
+                order_count=0,
+                duration=0,
+            )
+            session.add(shift)
+        await session.commit()
+        await session.refresh(shift)
+        return "Shift created successfully"
+
+
+
+
+@users_router.patch("/{user_id}/notes/{note_id}", status_code=200)
+async def update_user_note(user_id: int, note_id: str, req: NotesPatchUpdate):
+    """Update an existing note for a user."""
+    async with async_session() as session:
+        async with session.begin():
+            result = await session.execute(
+                select(Notes).where(
+                    Notes.id == note_id,
+                    Notes.user_id == user_id,
+                )
+            )
+            note = result.scalar_one_or_none()
+            if note is None:
+                raise HTTPException(status_code=404, detail="Note not found")
+
+            update_data = req.model_dump(exclude_unset=True)
+            for key, value in update_data.items():
+                setattr(note, key, value)
+            note.updated_at = utc_ts()
+        await session.commit()
+        await session.refresh(note)
+        return "Note updated successfully"
+
+@users_router.post("/{user_id}/notes", status_code=201)
+async def create_user_note(user_id: int, req: NotesCreateRequest):
+    """Create a new note for a user."""
+    async with async_session() as session:
+        async with session.begin():
+            note = Notes(
+                id=req.id,
+                user_id=user_id,
+                scope=req.scope,
+                workplace_id=req.workplace_id,
+                shift_id=req.shift_id,
+                header=req.header,
+                content=req.content,
+                pinned=req.pinned,
+                archived=req.archived,
+                created_at=utc_ts(),
+                updated_at=utc_ts(),
+            )
+            session.add(note)
+        await session.commit()
+        await session.refresh(note)
+        return "Note created successfully"
+@users_router.get("/{user_id}/notes", response_model=List[NotesResponse])
+async def get_user_notes(user_id: int):
+    async with async_session() as session:
+        stmt = select(Notes).where(Notes.user_id == user_id)
+        result = await session.execute(stmt)
+        notes = result.scalars().all()
+        return [NotesResponse.model_validate(note) for note in notes]
+
+
+
+@hall_router.patch("/workplaces/{workplace_id}/halls/{hall_id}", status_code=200)
+async def update_hall(workplace_id: str, hall_id: str, req: HallPatchUpdate):
+    """Update an existing hall."""
+    async with async_session() as session:
+        async with session.begin():
+            result = await session.execute(
+                select(Hall).where(
+                    Hall.id == hall_id,
+                    Hall.workplace_id == workplace_id,
+                )
+            )
+            hall = result.scalar_one_or_none()
+            if hall is None:
+                raise HTTPException(status_code=404, detail="Hall not found")
+
+            update_data = req.model_dump(exclude_unset=True)
+            for key, value in update_data.items():
+                setattr(hall, key, value)
+            
+        await session.commit()
+        await session.refresh(hall)
+        return "Hall updated successfully"
+@hall_router.post("/workplaces/{workplace_id}/halls", status_code=201)
+async def create_hall_for_workplace(workplace_id: str, req: HallCreateRequest):
+    """Create a new hall for a workplace."""
+    async with async_session() as session:
+        async with session.begin():
+            hall = Hall(
+                id=req.id,
+                workplace_id=workplace_id,
+                name=req.name,
+                position=req.position,
+                width=req.width,
+                height=req.height,
+                scale=req.scale,
+            )
+            session.add(hall)
+        await session.commit()
+        await session.refresh(hall)
+        return "Hall created successfully"
+@hall_router.get("/workplaces/{workplace_id}/halls", response_model=List[HallResponse])
+async def get_halls_for_workplace(workplace_id: str):
+    async with async_session() as session:
+        stmt = (
+            select(Hall)
+            .where(Hall.workplace_id == workplace_id)
+            .options(selectinload(Hall.tables))
+            .order_by(Hall.position)
+        )
+        result = await session.execute(stmt)
+        halls = result.scalars().all()
+
+        # Sort tables within each hall by number
+        for hall in halls:
+            hall.tables.sort(key=lambda table: table.number)
+
+        return [HallResponse.model_validate(hall) for hall in halls]
+@hall_router.post("/workplaces/{workplace_id}/halls/{hall_id}/tables", status_code=201)
+async def create_table_for_hall(workplace_id: str, hall_id: str, req: TableCreateRequest):
+    """Create a new table under a specific hall for a workplace."""
+    async with async_session() as session:
+        async with session.begin():
+            table = Table(
+                id=req.id,
+                hall_id=hall_id,
+                number=req.number,
+                x=req.x,
+                y=req.y,
+                width=req.width,
+                height=req.height,
+                rotation=req.rotation,
+                border_radius=req.border_radius,
+                status="free",
+                
+            )
+            session.add(table)
+        await session.commit()
+        await session.refresh(table)
+        return "Table created successfully"
+@hall_router.patch("/workplaces/{workplace_id}/halls/{hall_id}/tables/{table_id}", status_code=200)
+async def update_table(workplace_id: str, hall_id: str, table_id: str, req: TablePatchUpdate):
+    """Update an existing table."""
+    async with async_session() as session:
+        async with session.begin():
+            result = await session.execute(
+                select(Table).where(
+                    Table.id == table_id,
+                    Table.hall_id == hall_id,
+                )
+            )
+            table = result.scalar_one_or_none()
+            if table is None:
+                raise HTTPException(status_code=404, detail="Table not found")
+
+            update_data = req.model_dump(exclude_unset=True)
+            for key, value in update_data.items():
+                setattr(table, key, value)
+            
+        await session.commit()
+        await session.refresh(table)
+        return "Table updated successfully"
+
+@menu_router.patch("/workplaces/{workplace_id}/menu-categories/{category_id}", status_code=200)
+async def update_menu_category(workplace_id: str, category_id: str, req: MenuCategoryPatchUpdate):
+    """Update an existing menu category."""
+    async with async_session() as session:
+        async with session.begin():
+            result = await session.execute(
+                select(MenuCategory).where(
+                    MenuCategory.id == category_id,
+                    MenuCategory.workplace_id == workplace_id,
+                )
+            )
+            category = result.scalar_one_or_none()
+            if category is None:
+                raise HTTPException(status_code=404, detail="Menu category not found")
+
+            update_data = req.model_dump(exclude_unset=True)
+            for key, value in update_data.items():
+                setattr(category, key, value)
+            
+        await session.commit()
+        await session.refresh(category)
+        return "Menu category updated successfully"
+@menu_router.post("/workplaces/{workplace_id}/menu-categories", status_code=201)
+async def create_menu_category(workplace_id: str, req: MenuCategoryCreateRequest):
+    """Create a new menu category for a workplace."""
+    async with async_session() as session:
+        async with session.begin():
+            category = MenuCategory(
+                id=req.id,
+                workplace_id=workplace_id,
+                title=req.title,
+                position=req.position,
+                is_active=req.is_active,
+            )
+            session.add(category)
+        await session.commit()
+        await session.refresh(category)
+        return "Menu category created successfully"
+@menu_router.get("/workplaces/{workplace_id}/menu-categories", response_model=List[MenuCategoryResponse])
+async def get_menu_categories_with_items(workplace_id: str):
+    async with async_session() as session:
+        stmt = (
+            select(MenuCategory)
+            .where(MenuCategory.workplace_id == workplace_id)
+            .options(selectinload(MenuCategory.items))
+            .order_by(MenuCategory.position)
+        )
+        result = await session.execute(stmt)
+        categories = result.scalars().all()
+
+        # Sort items within each category by position
+        for category in categories:
+            category.items.sort(key=lambda item: item.position)
+
+        return [MenuCategoryResponse.model_validate(cat) for cat in categories]
+
+@menu_router.post("/workplaces/{workplace_id}/menu-categories/{category_id}/items", status_code=201)
+async def create_item_for_category(workplace_id: str, category_id: str, req: MenuItemCreateRequest):
+    """Create a new menu item under a specific category for a workplace."""
+    async with async_session() as session:
+        async with session.begin():
+            category = await session.scalar(
+                select(MenuCategory).where(
+                    MenuCategory.id == category_id,
+                    MenuCategory.workplace_id == workplace_id,
+                )
+            )
+            if category is None:
+                raise HTTPException(status_code=404, detail="Menu category not found")
+
+            item = MenuItem(
+                id=req.id,
+                category_id=category_id,
+                title=req.title,
+                description=req.description,
+                portion=req.portion,
+                price=req.price,
+                position=req.position,
+                is_active=req.is_active,
+            )
+            session.add(item)
         await session.commit()
         await session.refresh(item)
-        return OrderItemOut.model_validate(item)
-
-
-# -------------------------
-# (Optional) Delete endpoints (useful in admin tooling)
-# -------------------------
-
-
-@orders_router.delete("/orders/{order_id}")
-async def delete_order(order_id: str):
+        return "Menu item created successfully"
+    
+@menu_router.patch("/workplaces/{workplace_id}/menu-categories/{category_id}/items/{item_id}", status_code=200)
+async def update_menu_item(workplace_id: str, category_id: str, item_id: str, req: MenuItemPatchUpdate):
+    """Update an existing menu item."""
     async with async_session() as session:
-        order = await session.get(Order, order_id)
-        if not order:
-            raise HTTPException(status_code=404, detail="Order not found")
-        shift_id = order.shift_id
+        async with session.begin():
+            category = await session.scalar(
+                select(MenuCategory).where(
+                    MenuCategory.id == category_id,
+                    MenuCategory.workplace_id == workplace_id,
+                )
+            )
+            if category is None:
+                raise HTTPException(status_code=404, detail="Menu category not found")
 
-        # clear table UI cache
-        if order.table_id:
-            table = await session.get(Table, order.table_id)
-            if table and table.order_id == order.id:
-                table.order_id = None
-                table.status = "free"
+            result = await session.execute(
+                select(MenuItem).where(
+                    MenuItem.id == item_id,
+                    
+                    MenuItem.category_id == category_id,
+                )
+            )
+            item = result.scalar_one_or_none()
+            if item is None:
+                raise HTTPException(status_code=404, detail="Menu item not found")
 
-        await session.execute(delete(Order).where(Order.id == order_id))
-        await _recalc_shift_aggregates(session, shift_id)
+            update_data = req.model_dump(exclude_unset=True)
+            for key, value in update_data.items():
+                setattr(item, key, value)
+            
         await session.commit()
-        return {"ok": True}
-
+        await session.refresh(item)
+        return "Menu item updated successfully"
+    
 
 # =========================
 # Mount routers
@@ -1320,4 +848,4 @@ app.include_router(workplaces_router)
 app.include_router(hall_router)
 app.include_router(menu_router)
 app.include_router(shifts_router)
-app.include_router(orders_router)
+app.include_router(admin_router)

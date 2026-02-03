@@ -103,7 +103,7 @@ class User(Base):
     last_online_at: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
 
     last_workplace_id: Mapped[Optional[str]] = mapped_column(
-        ForeignKey("workplaces.id", ondelete="SET NULL"),
+        ID21,
         nullable=True,
     )
 

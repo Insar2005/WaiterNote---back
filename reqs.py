@@ -1,266 +1,562 @@
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional, Literal
+from __future__ import annotations
 
-class MenuItemResponse(BaseModel):
+from typing import Optional, List
+from pydantic import BaseModel, ConfigDict, Field
+
+
+# =========================
+# USER
+# =========================
+
+class UserCreateRequest(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: Optional[int] = None
+    tg_id: int
+    username: Optional[str] = None
+    language: str
+    timezone: str
+
+
+
+class WorkPlaceList(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
-    category_id: str
     title: str
-    description: Optional[str]
-    portion: Optional[str]
-    price: float
     position: int
+    is_archived: bool
 
-class MenuCategoryResponse(BaseModel):
+class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    tg_id: int
+    username: Optional[str] = None
+
+    language: str
+    timezone: str
+
+    last_online_at: Optional[int] = None
+    last_workplace_id: Optional[str] = None
+
+    is_onboarding_completed: bool
+    is_disabled: bool
+
+    created_at: int
+    updated_at: int
+
+    # ВАЖНО:
+    # - из ORM читаем user.workplaces
+    # - наружу отдаем как "wpList"
+    workplaces: List[WorkPlaceList] = Field(default_factory=list)#, serialization_alias="wpList")
+
+
+class UserPatchUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    # tg_id обычно не патчим (уникальный ключ), но оставлю опционально если нужно
+    username: Optional[str] = None
+
+    language: Optional[str] = None
+    timezone: Optional[str] = None
+
+    last_online_at: Optional[int] = None
+    last_workplace_id: Optional[str] = None
+
+    is_onboarding_completed: Optional[bool] = None
+    is_disabled: Optional[bool] = None
+
+
+# =========================
+# WORKPLACE
+# =========================
+class WorkplaceCreateRequest(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: Optional[str] = None
+    user_id: int
+
+    title: str
+    timezone: str
+    currency: str
+
+    service_percent_default: int = Field( default=10, ge=0, le=100)
+    shift_type_default: str = "standard"
+    pay_for_shift_default: float = 0.0
+
+    position: int = 0
+    is_archived: bool = False
+class WorkplaceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     user_id: int
+
     title: str
+    timezone: str
+    currency: str
+
+    service_percent_default: int
+    shift_type_default: str
+    pay_for_shift_default: float
+
     position: int
-    items: List[MenuItemResponse] = Field(default_factory=list)
+    is_archived: bool
 
-class TableResponse(BaseModel):
+    created_at: int
+    updated_at: int
+
+
+class WorkplacePatchUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    title: Optional[str] = None
+    timezone: Optional[str] = None
+    currency: Optional[str] = None
+
+    service_percent_default: Optional[int] = Field(default=None, ge=0, le=100)
+    shift_type_default: Optional[str] = None
+    pay_for_shift_default: Optional[float] = None
+
+    position: Optional[int] = None
+    is_archived: Optional[bool] = None
+
+
+# =========================
+# SHIFT
+# =========================
+class ShiftCreateRequest(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: Optional[str] = None
+    workplace_id: str
+
+    start_time: int
+    
+    place_work_title: str
+    currency: str
+    service_percent: int = Field( default=10, ge=0, le=100)
+    shift_type: str = "standard"
+    pay_for_shift: float = 0.0
+    
+class ShiftInHistoryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
-    hall_id: str
-    number: int
-    x: float
-    y: float
-    width: int
-    height: int
-    rotation: int
-    border_radius: int
-    status: str
-    order_id: Optional[str] = None
-
-class HallResponse(BaseModel):
+    start_time: int
+    end_time: int
+    total_pay_for_shift: float
+    total_tips: float
+    total_cash_register: float
+    duration: int
+    order_count: int
+    is_closed: bool
+class ShiftResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: str
-    user_id: int
-    name: str
-    position: int
-    tables: List[TableResponse] = Field(default_factory=list)
 
-class OrderItemResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
     id: str
-    order_id: str
-    menu_item_id: Optional[str]
-    title: str
-    price: float
-    quantity: int
-    comment: Optional[str]
+    workplace_id: str
+
+    start_time: int
+    is_closed: bool
+    end_time: int
+
+    place_work_title: str
+    currency: str
+    service_percent: int
+    shift_type: str
+    pay_for_shift: float
+
+    total_pay_for_shift: float
+    total_tips: float
+    total_cash_register: float
+
+    order_count: int
+    duration: int
+    orders: Optional[List[OrderResponse]] = []
+
+
+class ShiftPatchUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    # обычно start_time не патчим, но если надо — можно
+    is_closed: Optional[bool] = None
+    end_time: Optional[int] = None
+
+    # snapshot-поля можно запретить к патчу, но оставляю опционально
+    place_work_title: Optional[str] = None
+    currency: Optional[str] = None
+    service_percent: Optional[int] = Field(default=None, ge=0, le=100)
+    shift_type: Optional[str] = None
+    pay_for_shift: Optional[float] = None
+
+    total_pay_for_shift: Optional[float] = None
+    total_tips: Optional[float] = None
+    total_cash_register: Optional[float] = None
+
+    order_count: Optional[int] = None
+    duration: Optional[int] = None
+
+
+# =========================
+# ORDER
+# =========================
+class OrderCreateRequest(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: Optional[str] = None
+    shift_id: str
+    hall_id: Optional[str] = None
+    table_id: Optional[str] = None
+
+    table_number: Optional[int] = None
+    hall_name: Optional[str] = None
+
+    comments: Optional[str] = None
+
+    created_at: int
+
+    tips: float = 0.0
+    total_price: float = 0.0
+
+    is_paid: bool = False
+    is_done: bool = False
+    items: Optional[List[OrderItemCreateRequest]] = []
 
 class OrderResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
     id: str
+
     shift_id: str
-    hall_id: str
-    table_id: Optional[str]
-    table_number: Optional[int]
-    hall_name: Optional[str]
+    hall_id: Optional[str] = None
+    table_id: Optional[str] = None
+
+    table_number: Optional[int] = None
+    hall_name: Optional[str] = None
+
+    comments: Optional[str] = None
+
     created_at: int
     updated_at: int
-    closed_at: Optional[int]
-    comments: Optional[str]
-    tips: Optional[float]
+    closed_at: int
+
+    tips: float
     total_price: float
+
     is_paid: bool
     is_done: bool
     items: List[OrderItemResponse] = Field(default_factory=list)
 
-class ShiftResponse(BaseModel):
+
+class OrderPatchUpdate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: str
-    user_id: int
-    start_time: int
-    is_closed: bool
-    end_time: Optional[int]
-    place_work_title: str
-    currency: str
-    service_percent: int
-    shift_type: str
-    pay_for_shift: float
-    total_pay_for_shift: float
-    total_tips: float
-    total_cash_register: float
-    order_count: int
-    duration: int
-    orders: List[OrderResponse] = Field(default_factory=list)
 
-class UserResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    tg_id: int
-    username: str
-    language: str
-    place_work_title: str
-    timezone: str
-    currency: str
-    service_percent: int
-    shift_type: str
-    pay_for_shift: float
-    created_at: int
-    updated_at: int
-    shifts: List[ShiftResponse] = Field(default_factory=list)
-    menu: List[MenuCategoryResponse] = Field(default_factory=list)
-    halls: List[HallResponse] = Field(default_factory=list)
-
-
-# Схемы для создания записей
-
-class MenuItemCreate(BaseModel):
-    id:str
-    category_id: str
-    title: str
-    description: Optional[str] = None
-    portion: Optional[str] = None
-    price: float
-    position: int = 0
-
-class MenuCategoryCreate(BaseModel):
-    id:str
-    title: str
-    position: int = 0
-    items: Optional[List[MenuItemCreate]] = []
-
-class TableCreate(BaseModel):
-    id:str
-    hall_id: str
-    number: int
-    x: float = 0
-    y: float = 0
-    width: int = 100
-    height: int = 100
-    rotation: int = 0
-    border_radius: int = 15
-    status: str = "free"
-
-class HallCreate(BaseModel):
-    id:str
-    name: str
-    position: int = 0
-    tables: Optional[List[TableCreate]] = []
-
-class OrderItemCreate(BaseModel):
-    id:str
-    order_id: str
-    menu_item_id: Optional[str] = None
-    title: str
-    price: float
-    quantity: int = 1
-    comment: Optional[str] = None
-
-class OrderCreate(BaseModel):
-    id:str
-    shift_id: str
+    # связи/ссылки
+    hall_id: Optional[str] = None
     table_id: Optional[str] = None
+
+    # snapshot-поля
     table_number: Optional[int] = None
     hall_name: Optional[str] = None
+
     comments: Optional[str] = None
-    total_price: float = 0
-    items: List[OrderItemCreate]
 
-class ShiftCreate(BaseModel):
-    id:str
+    closed_at: Optional[int] = None
+    tips: Optional[float] = None
+    total_price: Optional[float] = None
 
-    start_time: int
-    place_work_title: str = "Waiter Note"
-    currency: str = "USD"
-    service_percent: int = 0
-    shift_type: str = "fixed"
-    pay_for_shift: float = 0
-
-class UserCreate(BaseModel):
-    tg_id: int
-    username: str
-    language: str = "ru"
-    place_work_title: str = "Waiter Note"
-    timezone: str = "Europe/Moscow"
-    currency: str = "RUB"
-    service_percent: int = 0
-    shift_type: str = "fixed"
-    pay_for_shift: float = 0
+    is_paid: Optional[bool] = None
+    is_done: Optional[bool] = None
+    items: Optional[List[OrderItemCreateRequest]] = None
 
 
-# Схемы для обновления записей
+# =========================
+# ORDER ITEM
+# =========================
+class OrderItemCreateRequest(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: Optional[str] = None
+    order_id: str
 
-class MenuItemUpdate(BaseModel):
-    
+    menu_item_id: Optional[str] = None
+
+    title: str
+    price: float
+    quantity: int = Field( default=1, ge=1)
+    total_price: float
+
+    comment: Optional[str] = None
+
+class OrderItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    order_id: str
+    menu_item_id: Optional[str] = None
+
+    title: str
+    price: float
+    quantity: int
+    total_price: float
+
+    comment: Optional[str] = None
+
+
+class OrderItemPatchUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    menu_item_id: Optional[str] = None
+
     title: Optional[str] = None
-    description: Optional[str] = None
-    portion: Optional[str] = None
     price: Optional[float] = None
-    position: Optional[int] = None
+    quantity: Optional[int] = Field(default=None, ge=1)
+    total_price: Optional[float] = None
 
-class MenuCategoryUpdate(BaseModel):
-    title: Optional[str] = None
-    position: Optional[int] = None
+    comment: Optional[str] = None
 
-class TableUpdate(BaseModel):
-    order_id:Optional[str] = None
-    number: Optional[int] = None
-    x: Optional[float] = None
-    y: Optional[float] = None
-    width: Optional[int] = None
-    height: Optional[int] = None
-    rotation: Optional[int] = None
-    border_radius: Optional[int] = None
-    status: Optional[str] = None
 
-class HallUpdate(BaseModel):
+# =========================
+# NOTES
+# =========================
+class NotesCreateRequest(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: Optional[str] = None
+    user_id: int
+
+    scope: str
+    workplace_id: Optional[str] = None
+    shift_id: Optional[str] = None
+
+    header: str
+    content: Optional[str] = None
+
+    pinned: bool = False
+    archived: bool = False
+class NotesResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    user_id: int
+
+    scope: str
+    workplace_id: Optional[str] = None
+    shift_id: Optional[str] = None
+
+    header: str
+    content: Optional[str] = None
+
+    pinned: bool
+    archived: bool
+
+    created_at: int
+    updated_at: int
+
+
+class NotesPatchUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    scope: Optional[str] = None
+    workplace_id: Optional[str] = None
+    shift_id: Optional[str] = None
+
+    header: Optional[str] = None
+    content: Optional[str] = None
+
+    pinned: Optional[bool] = None
+    archived: Optional[bool] = None
+
+
+# =========================
+# HALL
+# =========================
+class HallCreateRequest(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: Optional[str] = None
+    workplace_id: str
+
+    name: str
+    position: int = 0
+
+    width: int
+    height: int
+    scale: float = 1.0
+class HallResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workplace_id: str
+
+    name: str
+    position: int
+
+    width: int
+    height: int
+    scale: float
+    tables: Optional[List[TableResponse]] = []
+
+
+class HallPatchUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     name: Optional[str] = None
     position: Optional[int] = None
 
-class OrderItemUpdate(BaseModel):
-    menu_item_id: Optional[int] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    scale: Optional[float] = None
+
+
+# =========================
+# TABLE
+# =========================
+class TableCreateRequest(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: Optional[str] = None
+    hall_id: str
+
+    order_id: Optional[str] = None
+    number: int
+
+    x: float
+    y: float
+
+    width: int
+    height: int
+
+    rotation: int = 0
+    border_radius: int = 0
+
+    status: str = "free"
+
+class TableResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    hall_id: str
+
+    order_id: Optional[str] = None
+    number: int
+
+    x: float
+    y: float
+
+    width: int
+    height: int
+
+    rotation: int
+    border_radius: int
+
+    status: str
+
+
+class TablePatchUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    order_id: Optional[str] = None
+    number: Optional[int] = None
+
+    x: Optional[float] = None
+    y: Optional[float] = None
+
+    width: Optional[int] = None
+    height: Optional[int] = None
+
+    rotation: Optional[int] = None
+    border_radius: Optional[int] = None
+
+    status: Optional[str] = None
+
+
+# =========================
+# MENU CATEGORY
+# =========================
+class MenuCategoryCreateRequest(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: Optional[str] = None
+    workplace_id: str
+
+    title: str
+
+    position: int = 0
+    is_active: bool = True
+class MenuCategoryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workplace_id: str
+
+    title: str
+    position: int
+    is_active: bool
+    items: Optional[List[MenuItemResponse]] = []
+
+
+class MenuCategoryPatchUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     title: Optional[str] = None
+    position: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+# =========================
+# MENU ITEM
+# =========================
+
+class MenuItemCreateRequest(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: Optional[str] = None
+    category_id: str
+
+    title: str
+    description: Optional[str] = None
+    portion: Optional[str] = None
+
+    price: float
+
+    position: int = 0
+    is_active: bool = True
+class MenuItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    category_id: str
+
+    title: str
+    description: Optional[str] = None
+    portion: Optional[str] = None
+
+    price: float
+
+    position: int
+    is_active: bool
+
+
+class MenuItemPatchUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    title: Optional[str] = None
+    description: Optional[str] = None
+    portion: Optional[str] = None
+
     price: Optional[float] = None
-    total_price: Optional[float] = None
-    quantity: Optional[int] = None
-    comment: Optional[str] = None
 
-class OrderUpdate(BaseModel):
-    table_id: Optional[int] = None
-    table_number: Optional[int] = None
-    hall_name: Optional[str] = None
-    comments: Optional[str] = None
-    tips: Optional[float] = None
-    total_price: Optional[float] = None
-    is_paid: Optional[bool] = None
-    is_done: Optional[bool] = None
-    closed_at: Optional[int] = None
-    items: Optional[List[OrderItemUpdate]] = None
+    position: Optional[int] = None
+    is_active: Optional[bool] = None
 
-class ShiftUpdate(BaseModel):
-    is_closed: Optional[bool] = None
-    end_time: Optional[int] = None
-    place_work_title: Optional[str] = None
-    currency: Optional[str] = None
-    service_percent: Optional[int] = None
-    shift_type: Optional[str] = None
-    pay_for_shift: Optional[float] = None
-    total_pay_for_shift: Optional[float] = None
-    total_tips: Optional[float] = None
-    total_cash_register: Optional[float] = None
-    order_count: Optional[int] = None
-    duration: Optional[int] = None
 
-class UserUpdate(BaseModel):
-    username: Optional[str] = None
-    language: Optional[str] = None
-    place_work_title: Optional[str] = None
-    timezone: Optional[str] = None
-    currency: Optional[str] = None
-    service_percent: Optional[int] = None
-    shift_type: Optional[str] = None
-    pay_for_shift: Optional[float] = None
+# =========================
+# (Опционально) Response с вложениями для удобных ручек API
+# =========================
 
-class SyncOperation(BaseModel):
-    id: str                    
-    user_id: int               
-    entity: str                
-    action: Literal["add", "update", "delete"]
-    payload: dict    
+class OrderWithItemsResponse(OrderResponse):
+    model_config = ConfigDict(from_attributes=True)
+    items: List[OrderItemResponse] = []
 
-    #sdfkfcecece
+
+class WorkplaceFullResponse(WorkplaceResponse):
+    model_config = ConfigDict(from_attributes=True)
+    halls: List[HallResponse] = []
+    menu_categories: List[MenuCategoryResponse] = []
+    shifts: List[ShiftResponse] = []
+
+
+class HallWithTablesResponse(HallResponse):
+    model_config = ConfigDict(from_attributes=True)
+    tables: List[TableResponse] = []
