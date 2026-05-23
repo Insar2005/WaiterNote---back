@@ -3,6 +3,7 @@ from __future__ import annotations
 import enum
 import os
 import ssl
+from pathlib import Path
 from datetime import datetime, timezone as timeZone
 from typing import Optional, List
 
@@ -17,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
     Enum as SAEnum,
 )
 from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
@@ -39,20 +41,69 @@ MONEY = Numeric(10, 2, asdecimal=False)
 COORD = Numeric(10, 2, asdecimal=False)
 SCALE = Numeric(5, 2, asdecimal=False)
 
+# Unified timestamp type: BigInteger everywhere (safe past 2038)
+TS = BigInteger
+
 
 # =========================
 # DB Connection
 # =========================
 
 # === Подключение к БД ===
-ssl_context = ssl.create_default_context(
-    cafile=os.path.expanduser("./.cloud_cert/ca.crt")
-)
+def _load_dotenv() -> None:
+    env_path = Path(__file__).resolve().parent / ".env"
+    if not env_path.is_file():
+        return
+    try:
+        for raw in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            if key in os.environ and os.environ.get(key):
+                continue
+            value = value.strip().strip('"').strip("'")
+            os.environ[key] = value
+    except OSError:
+        return
+
+
+_load_dotenv()
+
+
+def _bool_env(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _build_ssl_context() -> ssl.SSLContext | None:
+    if _bool_env("DB_SSL_DISABLE"):
+        return None
+
+    ca_path = os.getenv("DB_SSL_CA")
+    if not ca_path:
+        default_ca = Path(__file__).resolve().parent / ".cloud_cert" / "ca.crt"
+        if default_ca.is_file():
+            ca_path = str(default_ca)
+
+    if ca_path:
+        return ssl.create_default_context(cafile=ca_path)
+
+    return ssl.create_default_context()
+
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not set")
+
+ssl_context = _build_ssl_context()
+connect_args = {"ssl": ssl_context} if ssl_context is not None else {}
 
 engine = create_async_engine(
-    url="postgresql+asyncpg://gen_user:Pa;Q)i&^rlVs3M@10991957a615ef4315a8f228.twc1.net:5432/WaiterNote",
-    connect_args={"ssl": ssl_context},
-    echo=True,pool_recycle=1800
+    url=DATABASE_URL,
+    # connect_args=connect_args,
+    echo=_bool_env("SQLALCHEMY_ECHO"),
+    pool_recycle=1800,
 )
 
 async_session = async_sessionmaker(bind=engine, expire_on_commit=False)
@@ -70,11 +121,36 @@ TableStatus = SAEnum(
     name="table_status",
 )
 
+ShiftTypeEnum = SAEnum(
+    "fixed",
+    "percent",
+    name="shift_type",
+)
+
 
 class NoteScope(str, enum.Enum):
     global_ = "global"
     workplace = "workplace"
     shift = "shift"
+
+
+NoteScopeEnum = SAEnum(
+    NoteScope,
+    name="note_scope",
+    values_callable=lambda e: [m.value for m in e],
+)
+
+
+class WorkplaceRole(str, enum.Enum):
+    owner = "owner"
+    member = "member"
+
+
+WorkplaceRoleEnum = SAEnum(
+    WorkplaceRole,
+    name="workplace_role",
+    values_callable=lambda e: [m.value for m in e],
+)
 
 
 # =========================
@@ -86,7 +162,7 @@ class Base(AsyncAttrs, DeclarativeBase):
 
 
 # =========================
-# Models (MVP v1: no bills splitting, no courses)
+# User
 # =========================
 
 class User(Base):
@@ -100,30 +176,36 @@ class User(Base):
     language: Mapped[str] = mapped_column(String(10), default="ru", nullable=False)
     timezone: Mapped[str] = mapped_column(String(100), default="Europe/Moscow", nullable=False)
 
-    last_online_at: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    last_online_at: Mapped[Optional[int]] = mapped_column(TS, nullable=True, index=True)
 
     last_workplace_id: Mapped[Optional[str]] = mapped_column(
         ForeignKey("workplaces.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
     )
-
 
     is_onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_disabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    created_at: Mapped[int] = mapped_column(Integer, default=utc_ts, nullable=False)
-    updated_at: Mapped[int] = mapped_column(Integer, default=utc_ts, onupdate=utc_ts, nullable=False)
+    created_at: Mapped[int] = mapped_column(TS, default=utc_ts, nullable=False)
+    updated_at: Mapped[int] = mapped_column(TS, default=utc_ts, onupdate=utc_ts, nullable=False)
 
     # Relationships
-    workplaces: Mapped[List["Workplace"]] = relationship(
+    owned_workplaces: Mapped[List["Workplace"]] = relationship(
         "Workplace",
+        back_populates="owner",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        foreign_keys="Workplace.owner_id",
+    )
+
+    memberships: Mapped[List["WorkplaceMember"]] = relationship(
+        "WorkplaceMember",
         back_populates="user",
         cascade="all, delete-orphan",
         passive_deletes=True,
-        foreign_keys="Workplace.user_id",
+        foreign_keys="WorkplaceMember.user_id",
     )
-
-  
 
     notes: Mapped[List["Notes"]] = relationship(
         "Notes",
@@ -133,6 +215,10 @@ class User(Base):
     )
 
 
+# =========================
+# Workplace
+# =========================
+
 class Workplace(Base):
     __tablename__ = "workplaces"
 
@@ -141,12 +227,14 @@ class Workplace(Base):
             "service_percent_default >= 0 AND service_percent_default <= 100",
             name="ck_workplaces_service_percent_range",
         ),
-        Index("ix_workplaces_user_position", "user_id", "position"),
+        Index("ix_workplaces_owner_position", "owner_id", "position"),
     )
 
     id: Mapped[str] = mapped_column(ID21, primary_key=True)
 
-    user_id: Mapped[int] = mapped_column(BigInteger,
+    # renamed from user_id -> owner_id (semantic clarity for future sharing)
+    owner_id: Mapped[int] = mapped_column(
+        BigInteger,
         ForeignKey("users.id", ondelete="CASCADE"),
         index=True,
         nullable=False,
@@ -157,20 +245,27 @@ class Workplace(Base):
     currency: Mapped[str] = mapped_column(String(10), default="RUB", nullable=False)
 
     service_percent_default: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    shift_type_default: Mapped[str] = mapped_column(String(20), default="fixed", nullable=False)
+    shift_type_default: Mapped[str] = mapped_column(ShiftTypeEnum, default="fixed", nullable=False)
     pay_for_shift_default: Mapped[float] = mapped_column(MONEY, default=0, nullable=False)
 
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    created_at: Mapped[int] = mapped_column(BigInteger, default=utc_ts, nullable=False)
-    updated_at: Mapped[int] = mapped_column(BigInteger, default=utc_ts, onupdate=utc_ts, nullable=False)
+    created_at: Mapped[int] = mapped_column(TS, default=utc_ts, nullable=False)
+    updated_at: Mapped[int] = mapped_column(TS, default=utc_ts, onupdate=utc_ts, nullable=False)
 
     # Relationships
-    user: Mapped["User"] = relationship(
+    owner: Mapped["User"] = relationship(
         "User",
-        back_populates="workplaces",
-        foreign_keys=[user_id],
+        back_populates="owned_workplaces",
+        foreign_keys=[owner_id],
+    )
+
+    members: Mapped[List["WorkplaceMember"]] = relationship(
+        "WorkplaceMember",
+        back_populates="workplace",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     halls: Mapped[List["Hall"]] = relationship(
@@ -202,12 +297,69 @@ class Workplace(Base):
     )
 
 
+# =========================
+# WorkplaceMember (shared access)
+# =========================
+
+class WorkplaceMember(Base):
+    """
+    Membership table for shared workplaces.
+    Owner is ALSO stored here with role='owner' (created implicitly on workplace create).
+    This lets us query "all workplaces user can access" with one join.
+    """
+    __tablename__ = "workplace_members"
+
+    __table_args__ = (
+        UniqueConstraint("workplace_id", "user_id", name="uq_workplace_members"),
+        Index("ix_workplace_members_user", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(ID21, primary_key=True)
+
+    workplace_id: Mapped[str] = mapped_column(
+        ForeignKey("workplaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    role: Mapped[str] = mapped_column(WorkplaceRoleEnum, default="member", nullable=False)
+
+    # for "last active workplace" tracking per user
+    joined_at: Mapped[int] = mapped_column(TS, default=utc_ts, nullable=False)
+
+    workplace: Mapped["Workplace"] = relationship("Workplace", back_populates="members")
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="memberships",
+        foreign_keys=[user_id],
+    )
+
+
+# =========================
+# Shift
+# =========================
+
 class Shift(Base):
     __tablename__ = "shifts"
 
     __table_args__ = (
-        # Fast lookup of open shift by workplace
         Index("ix_shifts_workplace_open", "workplace_id", "is_closed"),
+        # NULL end_time = open shift; allows efficient "find open shift" query
+        Index("ix_shifts_workplace_end", "workplace_id", "end_time"),
+        # Enforce: at most one open shift per (workplace, user).
+        # Postgres partial unique index — only applies to rows where end_time IS NULL.
+        Index(
+            "uq_shifts_open_per_user",
+            "workplace_id",
+            "opened_by_user_id",
+            unique=True,
+            postgresql_where=text("end_time IS NULL"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(ID21, primary_key=True)
@@ -218,17 +370,26 @@ class Shift(Base):
         nullable=False,
     )
 
-    start_time: Mapped[int] = mapped_column(Integer, default=utc_ts, nullable=False)
+    # Who opened this shift (important for shared workplaces)
+    opened_by_user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+
+    start_time: Mapped[int] = mapped_column(TS, default=utc_ts, nullable=False)
 
     is_closed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    end_time: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # NULL instead of 0 — idiomatic "not closed yet"
+    end_time: Mapped[Optional[int]] = mapped_column(TS, nullable=True)
 
-    # snapshot on shift start
-    place_work_title: Mapped[str] = mapped_column(String(255), default="Waiter Note", nullable=False)
-    currency: Mapped[str] = mapped_column(String(10), default="USD", nullable=False)
-    service_percent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    shift_type: Mapped[str] = mapped_column(String(20), default="fixed", nullable=False)
-    pay_for_shift: Mapped[float] = mapped_column(MONEY, default=0, nullable=False)
+    # snapshot on shift start (no default — must be set by service layer from Workplace)
+    place_work_title: Mapped[str] = mapped_column(String(255), nullable=False)
+    currency: Mapped[str] = mapped_column(String(10), nullable=False)
+    service_percent: Mapped[int] = mapped_column(Integer, nullable=False)
+    shift_type: Mapped[str] = mapped_column(ShiftTypeEnum, nullable=False)
+    pay_for_shift: Mapped[float] = mapped_column(MONEY, nullable=False)
 
     # aggregates
     total_pay_for_shift: Mapped[float] = mapped_column(MONEY, default=0, nullable=False)
@@ -255,12 +416,16 @@ class Shift(Base):
     )
 
 
+# =========================
+# Order
+# =========================
+
 class Order(Base):
     __tablename__ = "orders"
 
     __table_args__ = (
         Index("ix_orders_shift_created", "shift_id", "created_at"),
-        Index("ix_orders_shift_active", "shift_id", "is_paid"),  # active orders
+        Index("ix_orders_shift_active", "shift_id", "is_paid"),
     )
 
     id: Mapped[str] = mapped_column(ID21, primary_key=True)
@@ -283,21 +448,21 @@ class Order(Base):
         nullable=True,
     )
 
-    # snapshots at order creation (for history / denormalization)
+    # snapshots at order creation (survive table/hall deletion)
     table_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     hall_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     comments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    created_at: Mapped[int] = mapped_column(Integer, default=utc_ts, nullable=False)
-    updated_at: Mapped[int] = mapped_column(Integer, default=utc_ts, onupdate=utc_ts, nullable=False)
+    created_at: Mapped[int] = mapped_column(TS, default=utc_ts, nullable=False)
+    updated_at: Mapped[int] = mapped_column(TS, default=utc_ts, onupdate=utc_ts, nullable=False)
 
-    closed_at: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # NULL = not closed yet
+    closed_at: Mapped[Optional[int]] = mapped_column(TS, nullable=True)
 
     tips: Mapped[float] = mapped_column(MONEY, default=0, nullable=False)
     total_price: Mapped[float] = mapped_column(MONEY, default=0, nullable=False)
 
-    # Source of truth: paid -> order closed
     is_paid: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_done: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
@@ -311,8 +476,17 @@ class Order(Base):
     )
 
 
+# =========================
+# OrderItem
+# =========================
+
 class OrderItem(Base):
     __tablename__ = "order_items"
+
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_order_items_quantity_positive"),
+        CheckConstraint("price >= 0", name="ck_order_items_price_nonnegative"),
+    )
 
     id: Mapped[str] = mapped_column(ID21, primary_key=True)
 
@@ -331,19 +505,29 @@ class OrderItem(Base):
     title: Mapped[str] = mapped_column(String(150), nullable=False)
     price: Mapped[float] = mapped_column(MONEY, nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    # kept as physical column (not GENERATED) for cross-DB portability;
+    # service layer is responsible for keeping it = price * quantity
     total_price: Mapped[float] = mapped_column(MONEY, default=0, nullable=False)
 
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # True when the waiter has physically brought this item to the table.
+    # Helps trace progress on multi-item orders ("3/5 поданo").
+    # Defaults to False on creation; toggled via PATCH /orders/order-items/{id}.
+    served: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     order: Mapped["Order"] = relationship("Order", back_populates="items")
 
-    # optional helper (read-only join to menu)
     menu_item: Mapped[Optional["MenuItem"]] = relationship(
         "MenuItem",
         foreign_keys=[menu_item_id],
         viewonly=True,
     )
 
+
+# =========================
+# Notes
+# =========================
 
 class Notes(Base):
     __tablename__ = "notes"
@@ -377,12 +561,15 @@ class Notes(Base):
     id: Mapped[str] = mapped_column(ID21, primary_key=True)
 
     user_id: Mapped[int] = mapped_column(
+        BigInteger,
         ForeignKey("users.id", ondelete="CASCADE"),
         index=True,
         nullable=False,
     )
 
+    # Proper enum now
     scope: Mapped[str] = mapped_column(
+        NoteScopeEnum,
         default="global",
         nullable=False,
         index=True,
@@ -404,18 +591,27 @@ class Notes(Base):
     content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # renamed for consistency with other models (*_active, is_*)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    created_at: Mapped[int] = mapped_column(Integer, default=utc_ts, nullable=False)
-    updated_at: Mapped[int] = mapped_column(Integer, default=utc_ts, onupdate=utc_ts, nullable=False)
+    created_at: Mapped[int] = mapped_column(TS, default=utc_ts, nullable=False)
+    updated_at: Mapped[int] = mapped_column(TS, default=utc_ts, onupdate=utc_ts, nullable=False)
 
     user: Mapped["User"] = relationship("User", back_populates="notes")
     workplace: Mapped[Optional["Workplace"]] = relationship("Workplace", back_populates="notes")
     shift: Mapped[Optional["Shift"]] = relationship("Shift", back_populates="notes")
 
 
+# =========================
+# Hall
+# =========================
+
 class Hall(Base):
     __tablename__ = "halls"
+
+    __table_args__ = (
+        Index("ix_halls_workplace_position", "workplace_id", "position"),
+    )
 
     id: Mapped[str] = mapped_column(ID21, primary_key=True)
 
@@ -429,7 +625,7 @@ class Hall(Base):
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     width: Mapped[int] = mapped_column(Integer, default=1000, nullable=False)
-    height: Mapped[int] = mapped_column(Integer, default=600, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, default=1000, nullable=False)
     scale: Mapped[float] = mapped_column(SCALE, default=1.0, nullable=False)
 
     workplace: Mapped["Workplace"] = relationship("Workplace", back_populates="halls")
@@ -442,10 +638,16 @@ class Hall(Base):
     )
 
 
+# =========================
+# Table
+# =========================
+
 class Table(Base):
     __tablename__ = "tables"
 
     # Table.order_id is a UI cache. Source of truth is Order.table_id.
+    # Service layer MUST update both sides in a single transaction
+    # (see services/orders.py: attach_order_to_table / detach_order).
     __table_args__ = (
         UniqueConstraint("hall_id", "number", name="uq_tables_hall_number"),
     )
@@ -480,6 +682,10 @@ class Table(Base):
     hall: Mapped["Hall"] = relationship("Hall", back_populates="tables")
 
 
+# =========================
+# Menu
+# =========================
+
 class MenuCategory(Base):
     __tablename__ = "menu_categories"
 
@@ -513,6 +719,7 @@ class MenuItem(Base):
     __tablename__ = "menu_items"
 
     __table_args__ = (
+        CheckConstraint("price >= 0", name="ck_menu_items_price_nonnegative"),
         Index("ix_menu_items_category_active_pos", "category_id", "is_active", "position"),
     )
 
