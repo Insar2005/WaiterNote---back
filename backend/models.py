@@ -101,7 +101,7 @@ connect_args = {"ssl": ssl_context} if ssl_context is not None else {}
 
 engine = create_async_engine(
     url=DATABASE_URL,
-    # connect_args=connect_args,
+    connect_args=connect_args,
     echo=_bool_env("SQLALCHEMY_ECHO"),
     pool_recycle=1800,
 )
