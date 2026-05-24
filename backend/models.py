@@ -80,7 +80,17 @@ def _build_ssl_context() -> ssl.SSLContext | None:
     if _bool_env("DB_SSL_DISABLE"):
         return None
 
-    ca_path = os.getenv("DB_SSL_CA")
+    # Resolve a CA bundle path: explicit env var first, then a bundled
+    # default next to this file. Crucially we verify the file actually
+    # exists before handing it to ssl — passing a missing path to
+    # create_default_context(cafile=...) raises FileNotFoundError and
+    # crashes the whole app at import time (e.g. in a container where
+    # the cert wasn't shipped).
+    ca_path = os.getenv("DB_SSL_CA") or ""
+    if ca_path and not Path(ca_path).is_file():
+        print(f"[db] DB_SSL_CA points to a missing file: {ca_path} — ignoring")
+        ca_path = ""
+
     if not ca_path:
         default_ca = Path(__file__).resolve().parent / ".cloud_cert" / "ca.crt"
         if default_ca.is_file():
@@ -89,6 +99,8 @@ def _build_ssl_context() -> ssl.SSLContext | None:
     if ca_path:
         return ssl.create_default_context(cafile=ca_path)
 
+    # No custom CA available — fall back to the system trust store.
+    # This still validates the server certificate against public CAs.
     return ssl.create_default_context()
 
 
@@ -636,6 +648,88 @@ class Hall(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+
+    layouts: Mapped[List["HallLayout"]] = relationship(
+        "HallLayout",
+        back_populates="hall",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+# =========================
+# Hall Layout (saved arrangement template)
+# =========================
+
+class HallLayout(Base):
+    """
+    A saved snapshot of table positions within a hall. Lets the user
+    switch between named arrangements (e.g. "Стандарт" / "Банкет")
+    without recreating tables. Positions reference tables by their
+    `number` (stable across rearrangements) rather than database id.
+    """
+    __tablename__ = "hall_layouts"
+
+    __table_args__ = (
+        Index("ix_hall_layouts_hall", "hall_id"),
+    )
+
+    id: Mapped[str] = mapped_column(ID21, primary_key=True)
+
+    hall_id: Mapped[str] = mapped_column(
+        ForeignKey("halls.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    created_at: Mapped[int] = mapped_column(Integer, default=utc_ts, nullable=False)
+    updated_at: Mapped[int] = mapped_column(Integer, default=utc_ts, onupdate=utc_ts, nullable=False)
+
+    hall: Mapped["Hall"] = relationship("Hall", back_populates="layouts")
+
+    positions: Mapped[List["TablePosition"]] = relationship(
+        "TablePosition",
+        back_populates="layout",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class TablePosition(Base):
+    """
+    Where a specific table number should be placed when applying a given
+    layout. Identified by `table_number` (not table_id) so applying a
+    layout to a hall whose tables were recreated still finds the right slot.
+    """
+    __tablename__ = "table_positions"
+
+    __table_args__ = (
+        UniqueConstraint("layout_id", "table_number", name="uq_table_positions_layout_number"),
+        Index("ix_table_positions_layout", "layout_id"),
+    )
+
+    id: Mapped[str] = mapped_column(ID21, primary_key=True)
+
+    layout_id: Mapped[str] = mapped_column(
+        ForeignKey("hall_layouts.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+
+    table_number: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    x: Mapped[float] = mapped_column(COORD, default=0, nullable=False)
+    y: Mapped[float] = mapped_column(COORD, default=0, nullable=False)
+
+    width: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+
+    rotation: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    border_radius: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
+
+    layout: Mapped["HallLayout"] = relationship("HallLayout", back_populates="positions")
 
 
 # =========================
