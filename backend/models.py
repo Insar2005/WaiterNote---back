@@ -80,6 +80,19 @@ def _build_ssl_context() -> ssl.SSLContext | None:
     if _bool_env("DB_SSL_DISABLE"):
         return None
 
+    # DB_SSL_INSECURE: encrypt the connection but skip certificate
+    # verification. Needed for managed Postgres providers whose CA
+    # certificates don't satisfy modern OpenSSL's strict checks
+    # (e.g. "Missing Authority Key Identifier" on Python 3.13).
+    # The traffic is still TLS-encrypted; only the authenticity check
+    # of the server certificate is relaxed.
+    if _bool_env("DB_SSL_INSECURE"):
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        print("[db] SSL enabled WITHOUT certificate verification (DB_SSL_INSECURE)")
+        return ctx
+
     # Resolve a CA bundle path: explicit env var first, then a bundled
     # default next to this file. Crucially we verify the file actually
     # exists before handing it to ssl — passing a missing path to
@@ -109,13 +122,30 @@ if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set")
 
 ssl_context = _build_ssl_context()
-connect_args = {"ssl": ssl_context} if ssl_context is not None else {}
+
+# connect_args is passed straight to asyncpg.connect().
+#   ssl              — TLS context (or omitted entirely)
+#   timeout          — cap on establishing a new connection (seconds)
+#   command_timeout  — cap on any single query; without it a stalled
+#                      query hangs until the HTTP-level timeout fires,
+#                      which surfaces to the client as "Сеть недоступна".
+connect_args: dict = {
+    "timeout": 10,
+    "command_timeout": 10,
+}
+if ssl_context is not None:
+    connect_args["ssl"] = ssl_context
 
 engine = create_async_engine(
     url=DATABASE_URL,
     connect_args=connect_args,
     echo=_bool_env("SQLALCHEMY_ECHO"),
     pool_recycle=1800,
+    # Validate a pooled connection before handing it out. Without this a
+    # connection that died while idle (network blip between the app and
+    # the managed DB) is reused, and the next query hangs. pre_ping turns
+    # that into a quick reconnect instead of a stall.
+    pool_pre_ping=True,
 )
 
 async_session = async_sessionmaker(bind=engine, expire_on_commit=False)
