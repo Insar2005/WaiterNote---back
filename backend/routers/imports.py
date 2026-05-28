@@ -17,6 +17,8 @@ Auth model:
 """
 from typing import Annotated
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sqlalchemy import select
 
@@ -29,6 +31,7 @@ from models import (
     Hall,
     ImportShare,
     MenuCategory,
+    User,
     Workplace,
     WorkplaceMember,
 )
@@ -40,6 +43,7 @@ from schemas.import_share import (
     ImportShareOut,
 )
 from services import imports as import_service
+from services.telegram_bot import send_message
 
 
 # ============================================================
@@ -208,7 +212,76 @@ async def apply_import(
         category_ids=body.category_ids,
     )
     await session.commit()
+
+    # Notify the share's owner that someone just imported from them.
+    # Best-effort and non-blocking: we fire and forget on the asyncio
+    # event loop. If Telegram is down or the owner blocked the bot,
+    # the import still succeeded — the notification is a courtesy,
+    # not part of the contract.
+    asyncio.create_task(
+        _notify_owner_about_import(
+            owner_user_id=share.created_by_user_id,
+            source_workplace_id=share.workplace_id,
+            importer_user=user,
+            target_workplace_title=target.title,
+            result=result,
+        )
+    )
+
     return result
+
+
+async def _notify_owner_about_import(
+    *,
+    owner_user_id: int,
+    source_workplace_id: str,
+    importer_user: User,
+    target_workplace_title: str,
+    result: dict,
+) -> None:
+    """
+    Send a Telegram notification to the share owner.
+
+    Opens its OWN DB session — the request session is gone by the time
+    this fires (we scheduled it via asyncio.create_task after commit).
+
+    Bonus: this also gives us crash isolation: any DB hiccup here can't
+    poison the original request's session.
+    """
+    from models import async_session  # local import avoids router import cycles
+    try:
+        async with async_session() as s:
+            owner = await s.get(User, owner_user_id)
+            source_wp = await s.get(Workplace, source_workplace_id)
+
+        if owner is None or source_wp is None:
+            return
+
+        # Build a short, human summary. Omit zero rows; "0 шаблонов"
+        # is just noise. Importer's @username if they have one, else
+        # generic "кто-то".
+        importer_name = (
+            f"@{importer_user.username}"
+            if importer_user.username
+            else "Кто-то"
+        )
+        parts = []
+        if result.get("halls_imported"):
+            parts.append(f"{result['halls_imported']} залов")
+        if result.get("categories_imported"):
+            parts.append(f"{result['categories_imported']} категорий")
+        if result.get("items_imported"):
+            parts.append(f"{result['items_imported']} позиций")
+        summary = ", ".join(parts) if parts else "содержимое"
+
+        text = (
+            f"📥 Импорт из «{source_wp.title}»\n\n"
+            f"{importer_name} только что скопировал {summary} "
+            f"к себе в «{target_workplace_title}»."
+        )
+        await send_message(owner.tg_id, text)
+    except Exception:  # noqa: BLE001 — fire-and-forget; never crash the loop
+        pass
 
 
 # ============================================================

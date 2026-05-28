@@ -178,3 +178,53 @@ async def get_bot_username() -> Optional[str]:
     except Exception as e:  # noqa: BLE001
         _log(f"getMe failed: {type(e).__name__}: {e}")
         return None
+
+
+async def send_message(
+    tg_user_id: int,
+    text: str,
+    *,
+    parse_mode: Optional[str] = None,
+) -> bool:
+    """
+    Send a plain message from the bot to a user.
+
+    Best-effort: returns True on a successful sendMessage, False otherwise.
+    Callers should NOT block on this — notifications are a nicety, and a
+    failed delivery shouldn't roll back the action that triggered it
+    (e.g. an import).
+
+    Why no exceptions: the typical failure modes here are "user blocked
+    the bot" (403) and "Telegram unreachable" (timeout). Neither is the
+    caller's problem; we just log and move on.
+    """
+    settings = get_settings()
+    token = settings.BOT_TOKEN
+    if not token:
+        _log("send_message: BOT_TOKEN empty")
+        return False
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload: dict = {
+        "chat_id": tg_user_id,
+        "text": text,
+        # disable_web_page_preview keeps notifications compact — Telegram
+        # would otherwise fetch a preview for any URL in the message,
+        # which is noisy for short status pings.
+        "disable_web_page_preview": True,
+    }
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+
+    try:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=_ATTEMPT_TIMEOUT_SECONDS),
+        ) as session:
+            async with session.post(url, json=payload) as resp:
+                if resp.status == 200:
+                    return True
+                _log(f"sendMessage user={tg_user_id} non-200: {resp.status}")
+                return False
+    except Exception as e:  # noqa: BLE001
+        _log(f"sendMessage failed: {type(e).__name__}: {e}")
+        return False
