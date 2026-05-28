@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from models import init_db
 from config import get_settings
 
-from routers import workplaces, me, halls, menu, shifts, orders, notes
+from routers import workplaces, me, halls, menu, shifts, orders, notes, layouts
 
 
 @asynccontextmanager
@@ -47,6 +47,8 @@ def create_app() -> FastAPI:
     app.include_router(orders.order_quick_router)
     app.include_router(orders.order_router)
     app.include_router(notes.router)
+    app.include_router(layouts.layout_under_hall)
+    app.include_router(layouts.layout_router)
 
     return app
 
