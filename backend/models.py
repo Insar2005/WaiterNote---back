@@ -881,6 +881,67 @@ class MenuItem(Base):
 
 
 # =========================
+# ImportShare (one-time publish window for importing a workplace's content)
+# =========================
+
+class ImportShare(Base):
+    """
+    A time-limited public publication of a workplace's halls/menu/layouts.
+
+    The owner creates one of these to grant temporary read-and-copy access
+    to anyone who has the `code`. The link/code is meant to be shared
+    out-of-band (in chat, voice, message) — anyone with it can preview and
+    import while the share is active. This is NOT a one-shot ticket; the
+    same code can be used by many people in parallel during its TTL.
+
+    Active window: revoked_at IS NULL AND expires_at > now()
+
+    The shared user-facing string is `code` (~8 chars from a friendly
+    alphabet). `id` is a normal nanoid PK to keep DB joins fast and to
+    avoid leaking the code into log lines or admin UIs.
+    """
+    __tablename__ = "import_shares"
+
+    __table_args__ = (
+        Index("ix_import_shares_code", "code", unique=True),
+        Index("ix_import_shares_workplace", "workplace_id"),
+        Index("ix_import_shares_active", "expires_at", "revoked_at"),
+    )
+
+    id: Mapped[str] = mapped_column(ID21, primary_key=True)
+
+    # Short, friendly, case-insensitive (we store uppercase). Unique across
+    # the whole system so the bare code is enough to find the share — no
+    # workplace_id needed in the URL.
+    code: Mapped[str] = mapped_column(String(16), unique=True, nullable=False)
+
+    workplace_id: Mapped[str] = mapped_column(
+        ForeignKey("workplaces.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+
+    created_by_user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    # unix seconds. expires_at is set on creation = now + ttl_hours*3600
+    created_at: Mapped[int] = mapped_column(TS, default=utc_ts, nullable=False)
+    expires_at: Mapped[int] = mapped_column(TS, nullable=False)
+
+    # NULL until the owner explicitly closes the share before its TTL.
+    revoked_at: Mapped[Optional[int]] = mapped_column(TS, nullable=True)
+
+    # Bumped by every successful POST /import/{code}/apply.
+    # Lets the owner see "8 people imported using this link" at a glance.
+    import_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    workplace: Mapped["Workplace"] = relationship("Workplace")
+
+
+# =========================
 # DB Init
 # =========================
 
