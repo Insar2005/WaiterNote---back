@@ -237,6 +237,7 @@ async def apply_import(
     target_workplace: Workplace,
     hall_ids: list[str],
     category_ids: list[str],
+    replace_existing: bool = False,
 ) -> dict:
     """
     Copy the selected halls and categories from the share's source into
@@ -244,9 +245,14 @@ async def apply_import(
     the source never appear in the target.
 
     Order of operations:
-      1. Halls (and their tables + layouts + positions) come first.
-      2. Then categories (and their items).
-    Both are independent — they don't reference each other.
+      1. (optional) Delete target's current halls / categories if
+         replace_existing=True. Scope is matched to what's being
+         imported: importing only menu deletes only existing menu,
+         and vice versa. Active orders survive via ON DELETE SET NULL —
+         they just lose their table_id / menu_item_id attachment.
+      2. Halls (and their tables + layouts + positions) come first.
+      3. Then categories (and their items).
+    Halls and categories are independent — they don't reference each other.
 
     Halls bring their layouts along automatically. The layout's
     TablePosition rows reference tables by `number` (not id), and we
@@ -254,19 +260,59 @@ async def apply_import(
     survives the ID rewrite without any extra bookkeeping.
 
     Positions are renumbered to land at the end of the target's existing
-    lists, so existing items aren't displaced when the user imports.
+    lists, so existing items aren't displaced when the user imports
+    (or start at 0 if replace_existing wiped the target first).
     """
     halls_imported = 0
     tables_imported = 0
     layouts_imported = 0
     categories_imported = 0
     items_imported = 0
+    halls_replaced = 0
+    categories_replaced = 0
+
+    from sqlalchemy import func, delete
+
+    # ----- Optional: wipe matching existing content first -----
+    # Scoped deletion: only wipe what we're about to import. Importing only
+    # halls? Don't touch the menu. Importing only menu? Don't touch halls.
+    # CASCADE on the FKs handles tables/items/layouts/positions; orders
+    # survive via ON DELETE SET NULL on their table_id/menu_item_id refs.
+    if replace_existing and hall_ids:
+        halls_replaced = (
+            await session.scalar(
+                select(func.count(Hall.id)).where(
+                    Hall.workplace_id == target_workplace.id
+                )
+            )
+        ) or 0
+        if halls_replaced > 0:
+            await session.execute(
+                delete(Hall).where(Hall.workplace_id == target_workplace.id)
+            )
+            await session.flush()
+
+    if replace_existing and category_ids:
+        categories_replaced = (
+            await session.scalar(
+                select(func.count(MenuCategory.id)).where(
+                    MenuCategory.workplace_id == target_workplace.id
+                )
+            )
+        ) or 0
+        if categories_replaced > 0:
+            await session.execute(
+                delete(MenuCategory).where(
+                    MenuCategory.workplace_id == target_workplace.id
+                )
+            )
+            await session.flush()
 
     # ----- Halls -----
     if hall_ids:
         # Compute the next free position in the target workplace once,
-        # then increment locally as we add halls.
-        from sqlalchemy import func
+        # then increment locally as we add halls. After a replace_existing
+        # wipe this will be 0.
         target_hall_max_pos = await session.scalar(
             select(func.coalesce(func.max(Hall.position), -1)).where(
                 Hall.workplace_id == target_workplace.id
@@ -359,7 +405,6 @@ async def apply_import(
 
     # ----- Categories + items -----
     if category_ids:
-        from sqlalchemy import func
         target_cat_max_pos = await session.scalar(
             select(func.coalesce(func.max(MenuCategory.position), -1)).where(
                 MenuCategory.workplace_id == target_workplace.id
@@ -425,4 +470,6 @@ async def apply_import(
         "layouts_imported": layouts_imported,
         "categories_imported": categories_imported,
         "items_imported": items_imported,
+        "halls_replaced": halls_replaced,
+        "categories_replaced": categories_replaced,
     }

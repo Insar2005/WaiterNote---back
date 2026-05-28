@@ -95,10 +95,19 @@ class ImportApplyRequest(APIModel):
 
     `hall_ids` / `category_ids`: subset of what came back from preview.
     Empty lists are valid — e.g. import only menu, or only halls.
+
+    `replace_existing`: when true, the target workplace's CURRENT halls
+    (if hall_ids non-empty) and/or categories (if category_ids non-empty)
+    are deleted BEFORE the new ones are inserted. Scope is matched to
+    what's being imported: importing only menu deletes only existing
+    menu, not halls. Active orders are preserved through the model's
+    `ON DELETE SET NULL` foreign keys — they just lose their table /
+    menu_item attachment.
     """
     target_workplace_id: NanoID
     hall_ids: List[NanoID] = Field(default_factory=list)
     category_ids: List[NanoID] = Field(default_factory=list)
+    replace_existing: bool = False
 
 
 class ImportApplyResult(APIModel):
@@ -108,3 +117,5 @@ class ImportApplyResult(APIModel):
     layouts_imported: int
     categories_imported: int
     items_imported: int
+    halls_replaced: int = 0
+    categories_replaced: int = 0

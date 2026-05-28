@@ -210,6 +210,7 @@ async def apply_import(
         target_workplace=target,
         hall_ids=body.hall_ids,
         category_ids=body.category_ids,
+        replace_existing=body.replace_existing,
     )
     await session.commit()
 
@@ -274,10 +275,19 @@ async def _notify_owner_about_import(
             parts.append(f"{result['items_imported']} позиций")
         summary = ", ".join(parts) if parts else "содержимое"
 
+        # Mention if the importer wiped their existing content first, so
+        # the owner has a clearer mental picture of what happened on the
+        # other side.
+        replaced_note = ""
+        if result.get("halls_replaced") or result.get("categories_replaced"):
+            replaced_note = (
+                "\n\n(Перед импортом было удалено старое содержимое.)"
+            )
+
         text = (
             f"📥 Импорт из «{source_wp.title}»\n\n"
             f"{importer_name} только что скопировал {summary} "
-            f"к себе в «{target_workplace_title}»."
+            f"к себе в «{target_workplace_title}».{replaced_note}"
         )
         await send_message(owner.tg_id, text)
     except Exception:  # noqa: BLE001 — fire-and-forget; never crash the loop
