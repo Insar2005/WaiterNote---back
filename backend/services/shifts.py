@@ -9,6 +9,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select, func, and_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from models import Shift, Order, Workplace, User
 from utils.time import utc_ts
@@ -137,8 +138,20 @@ async def close_shift(
     """
     Close a shift. Recomputes aggregates and sets end_time + duration.
 
-    If `force=False` and there are unpaid orders, raises 409 with their count.
-    If `force=True`, closes anyway — unpaid orders remain unpaid (waiter's responsibility).
+    If `force=False` and there are unpaid orders, raises 409 with their count
+    so the frontend can prompt the user "you have N unpaid orders, close anyway?".
+
+    If `force=True`, auto-pays every remaining unpaid order with tips=0:
+      - is_paid=True, is_done=True, closed_at=now
+      - empty orders (no items) are deleted instead of paid — paying an
+        empty order would put a zero row into the shift's revenue
+      - table is detached (status returns to "free") via the same helper
+        the normal pay_order flow uses, so the map stays consistent
+      - aggregates are recomputed once at the end, after all auto-pays land
+
+    This matches what the mock backend has been doing all along, which is
+    what waiters are used to: closing the shift "tidies up" loose orders
+    rather than leaving them dangling for the next session.
     """
     if shift.is_closed:
         raise HTTPException(
@@ -146,21 +159,57 @@ async def close_shift(
             detail="shift is already closed",
         )
 
-    unpaid_count = await session.scalar(
-        select(func.count(Order.id)).where(
+    # Pull the actual unpaid orders (with items, so we can decide whether
+    # to auto-pay or delete each one). Doing the full SELECT here keeps
+    # the rest of the function readable; for normal shifts this list is
+    # short, so we don't lose anything by not streaming.
+    unpaid_stmt = (
+        select(Order)
+        .where(
             Order.shift_id == shift.id,
             Order.is_paid.is_(False),
         )
+        .options(selectinload(Order.items))
     )
-    if unpaid_count and not force:
+    unpaid_orders = list((await session.execute(unpaid_stmt)).scalars().all())
+
+    if unpaid_orders and not force:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"shift has {unpaid_count} unpaid orders; pass force=true to close anyway",
+            detail=(
+                f"shift has {len(unpaid_orders)} unpaid orders; "
+                "pass force=true to close anyway"
+            ),
         )
+
+    now = utc_ts()
+
+    if force and unpaid_orders:
+        # Lazy import to avoid a circular import: services.orders imports
+        # recompute_aggregates from services.shifts.
+        from services.orders import _detach_order_from_table
+
+        for order in unpaid_orders:
+            if not order.items:
+                # An empty order is a UI artefact — usually a draft that
+                # got submitted by accident. Don't pay zero rows into the
+                # shift's revenue; just delete + detach the table.
+                await _detach_order_from_table(session, order)
+                await session.delete(order)
+                continue
+
+            order.is_paid = True
+            order.is_done = True
+            order.tips = 0.0
+            order.closed_at = now
+            await _detach_order_from_table(session, order)
+
+        # Flush deletes/updates before recompute so the SUM sees the new
+        # state. recompute_aggregates uses the DB, not the session cache.
+        await session.flush()
 
     await recompute_aggregates(session, shift)
 
-    now = utc_ts()
     shift.end_time = now
     shift.is_closed = True
     shift.duration = max(0, now - shift.start_time)
