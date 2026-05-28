@@ -121,6 +121,19 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set")
 
+# Normalise the URL scheme for SQLAlchemy's async engine. Many managed
+# Postgres providers (Railway, Render, Heroku) expose DATABASE_URL with
+# the bare `postgresql://` scheme, but SQLAlchemy's async engine needs
+# the driver-qualified form `postgresql+asyncpg://`. We patch it here
+# rather than relying on the user to remember the right prefix in every
+# environment.
+if DATABASE_URL.startswith("postgres://"):
+    # Older convention some platforms still use.
+    DATABASE_URL = "postgresql+asyncpg://" + DATABASE_URL[len("postgres://"):]
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = "postgresql+asyncpg://" + DATABASE_URL[len("postgresql://"):]
+# If it already has `postgresql+asyncpg://`, leave it alone.
+
 ssl_context = _build_ssl_context()
 
 # connect_args is passed straight to asyncpg.connect().
