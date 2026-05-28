@@ -205,6 +205,7 @@ async def build_preview(
     )
 
     return {
+        "source_workplace_id": wp.id,
         "source_workplace_title": wp.title,
         "halls": [
             {
@@ -237,7 +238,8 @@ async def apply_import(
     target_workplace: Workplace,
     hall_ids: list[str],
     category_ids: list[str],
-    replace_existing: bool = False,
+    replace_halls: bool = False,
+    replace_categories: bool = False,
 ) -> dict:
     """
     Copy the selected halls and categories from the share's source into
@@ -245,11 +247,10 @@ async def apply_import(
     the source never appear in the target.
 
     Order of operations:
-      1. (optional) Delete target's current halls / categories if
-         replace_existing=True. Scope is matched to what's being
-         imported: importing only menu deletes only existing menu,
-         and vice versa. Active orders survive via ON DELETE SET NULL —
-         they just lose their table_id / menu_item_id attachment.
+      1. (optional) Delete target's current halls / categories if the
+         matching replace_* flag is on. Active orders survive via
+         ON DELETE SET NULL — they just lose their table_id /
+         menu_item_id attachment.
       2. Halls (and their tables + layouts + positions) come first.
       3. Then categories (and their items).
     Halls and categories are independent — they don't reference each other.
@@ -261,8 +262,20 @@ async def apply_import(
 
     Positions are renumbered to land at the end of the target's existing
     lists, so existing items aren't displaced when the user imports
-    (or start at 0 if replace_existing wiped the target first).
+    (or start at 0 if a replace flag wiped the target first).
+
+    Self-import safety: if the target is the same workplace as the share
+    source, the replace flags MUST be off — wiping then re-copying from
+    the just-wiped rows would leave the workplace empty. The router
+    enforces this; we double-check here.
     """
+    is_self_import = share.workplace_id == target_workplace.id
+    if is_self_import and (replace_halls or replace_categories):
+        # Defensive: caller should have caught this. Treat as a no-op
+        # for the replace flags rather than wiping everything.
+        replace_halls = False
+        replace_categories = False
+
     halls_imported = 0
     tables_imported = 0
     layouts_imported = 0
@@ -274,11 +287,11 @@ async def apply_import(
     from sqlalchemy import func, delete
 
     # ----- Optional: wipe matching existing content first -----
-    # Scoped deletion: only wipe what we're about to import. Importing only
-    # halls? Don't touch the menu. Importing only menu? Don't touch halls.
-    # CASCADE on the FKs handles tables/items/layouts/positions; orders
-    # survive via ON DELETE SET NULL on their table_id/menu_item_id refs.
-    if replace_existing and hall_ids:
+    # Each replace flag is gated on its own list being non-empty. Wiping
+    # halls when no hall_ids are selected would mean "delete my halls but
+    # don't import any" — the UI doesn't expose that, but we guard against
+    # it here in case a client constructs the request directly.
+    if replace_halls and hall_ids:
         halls_replaced = (
             await session.scalar(
                 select(func.count(Hall.id)).where(
@@ -292,7 +305,7 @@ async def apply_import(
             )
             await session.flush()
 
-    if replace_existing and category_ids:
+    if replace_categories and category_ids:
         categories_replaced = (
             await session.scalar(
                 select(func.count(MenuCategory.id)).where(

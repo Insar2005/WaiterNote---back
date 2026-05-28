@@ -75,7 +75,12 @@ class ImportPreviewOut(APIModel):
     workplace title (so the importer knows where the content came from),
     plus the lists of selectable halls and menu categories. No prices,
     no positions — those come in on apply.
+
+    `source_workplace_id` lets the client detect the self-import case
+    (target == source) and hide the "replace existing" toggles, since
+    enabling them would wipe the very data we'd then try to copy.
     """
+    source_workplace_id: str
     source_workplace_title: str
     halls: List[ImportPreviewHall] = []
     categories: List[ImportPreviewCategory] = []
@@ -96,18 +101,23 @@ class ImportApplyRequest(APIModel):
     `hall_ids` / `category_ids`: subset of what came back from preview.
     Empty lists are valid — e.g. import only menu, or only halls.
 
-    `replace_existing`: when true, the target workplace's CURRENT halls
-    (if hall_ids non-empty) and/or categories (if category_ids non-empty)
-    are deleted BEFORE the new ones are inserted. Scope is matched to
-    what's being imported: importing only menu deletes only existing
-    menu, not halls. Active orders are preserved through the model's
-    `ON DELETE SET NULL` foreign keys — they just lose their table /
+    `replace_halls` / `replace_categories`: when true, the target
+    workplace's CURRENT halls (resp. categories) are deleted BEFORE the
+    new ones are inserted. The flags are independent — a user can wipe
+    their menu but keep their halls, or vice versa. Active orders
+    survive through ON DELETE SET NULL — they just lose their table /
     menu_item attachment.
+
+    Note: replace flags are silently ignored when the target workplace
+    is the same as the share's source. Wiping then re-copying from the
+    just-wiped data would leave the target empty — we reject that on
+    the router side rather than letting it happen here.
     """
     target_workplace_id: NanoID
     hall_ids: List[NanoID] = Field(default_factory=list)
     category_ids: List[NanoID] = Field(default_factory=list)
-    replace_existing: bool = False
+    replace_halls: bool = False
+    replace_categories: bool = False
 
 
 class ImportApplyResult(APIModel):

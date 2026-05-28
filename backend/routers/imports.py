@@ -204,13 +204,30 @@ async def apply_import(
                 detail="one or more category_ids are not part of this share",
             )
 
+    # Self-import guard: importing into the same workplace the share came
+    # from would let the user wipe their own data without copying anything
+    # in return (delete-then-copy from just-deleted rows). The mere "copy
+    # to myself" (without replace flags) is a legal no-op, but combining
+    # it with a replace flag is destructive nonsense — reject loudly.
+    if target.id == share.workplace_id and (
+        body.replace_halls or body.replace_categories
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "нельзя импортировать с заменой в то же заведение, "
+                "из которого создана ссылка"
+            ),
+        )
+
     result = await import_service.apply_import(
         session,
         share=share,
         target_workplace=target,
         hall_ids=body.hall_ids,
         category_ids=body.category_ids,
-        replace_existing=body.replace_existing,
+        replace_halls=body.replace_halls,
+        replace_categories=body.replace_categories,
     )
     await session.commit()
 
