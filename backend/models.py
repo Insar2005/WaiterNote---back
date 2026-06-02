@@ -242,6 +242,14 @@ class User(Base):
     is_onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_disabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # === Appearance preferences ===
+    # Cross-device sync of theme + accent. Stored as short string keys
+    # so backend doesn't need to know the actual colors — the frontend
+    # has the canonical accent palette. Free-form String (not Enum) so
+    # adding a new accent doesn't require a DB migration.
+    accent_key: Mapped[str] = mapped_column(String(32), default="green", nullable=False)
+    theme: Mapped[str] = mapped_column(String(16), default="auto", nullable=False)
+
     created_at: Mapped[int] = mapped_column(TS, default=utc_ts, nullable=False)
     updated_at: Mapped[int] = mapped_column(TS, default=utc_ts, onupdate=utc_ts, nullable=False)
 

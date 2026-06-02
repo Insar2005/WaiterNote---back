@@ -13,6 +13,9 @@ class UserOut(APIModel):
     last_online_at: Optional[int]
     last_workplace_id: Optional[str]
     is_onboarding_completed: bool
+    # Appearance prefs synced across devices.
+    accent_key: str
+    theme: str
     created_at: int
     updated_at: int
 
@@ -21,6 +24,11 @@ class UserUpdate(APIModel):
     language: Optional[str] = Field(default=None, min_length=2, max_length=10)
     timezone: Optional[str] = Field(default=None, min_length=1, max_length=100)
     is_onboarding_completed: Optional[bool] = None
+
+    # Appearance — short string keys the frontend defines (avoid Enum so
+    # adding a new accent doesn't require a backend deploy).
+    accent_key: Optional[str] = Field(default=None, min_length=1, max_length=32)
+    theme: Optional[Literal["auto", "light", "dark"]] = None
 
 
 class BotAccessOut(APIModel):
