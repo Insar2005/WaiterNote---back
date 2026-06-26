@@ -5,14 +5,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from models import init_db
 from config import get_settings
 
-from routers import workplaces, me, halls, menu, shifts, orders, notes, layouts, imports
+from routers import (
+    workplaces, me, halls, menu, shifts, orders, notes,
+    layouts, imports, reminders,
+)
+from services import reminders_worker
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    yield
-
+    # Start the reminders worker as a background task. It scans the
+    # reminders table once a minute and asks the Telegram bot to fire
+    # due notifications. Cleanly stopped on shutdown so Railway deploys
+    # don't leave orphan tasks behind.
+    reminders_worker.start()
+    try:
+        yield
+    finally:
+        await reminders_worker.stop()
 
 def create_app() -> FastAPI:
     settings = get_settings()
@@ -52,6 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(imports.owner_router)
     app.include_router(imports.import_router)
     app.include_router(imports.share_router)
+    app.include_router(reminders.router)
 
     return app
 

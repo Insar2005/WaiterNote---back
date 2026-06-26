@@ -277,6 +277,13 @@ class User(Base):
         passive_deletes=True,
     )
 
+    reminders: Mapped[List["Reminder"]] = relationship(
+    "Reminder",
+    back_populates="user",
+    cascade="all, delete-orphan",
+    passive_deletes=True,
+)
+
 
 # =========================
 # Workplace
@@ -516,7 +523,11 @@ class Order(Base):
     hall_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     comments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
+    # Number of guests at the table (1..10). 1 = single bill; 2+ = split
+# per guest, each OrderItem carries its own `guest` index referencing
+# this. Stored at the order level so reopening an order remembers the
+# waiter's choice even if all items were removed/added later.
+    guests_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_at: Mapped[int] = mapped_column(TS, default=utc_ts, nullable=False)
     updated_at: Mapped[int] = mapped_column(TS, default=utc_ts, onupdate=utc_ts, nullable=False)
 
@@ -578,7 +589,11 @@ class OrderItem(Base):
     # Helps trace progress on multi-item orders ("3/5 поданo").
     # Defaults to False on creation; toggled via PATCH /orders/order-items/{id}.
     served: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
+    # Guest index this item belongs to (1..Order.guests_count). 1 by
+# default — the single-bill behaviour. Used by the per-guest cart
+# split in the order builder; carried in create / add-items /
+# edit-paid payloads so history preserves the split.
+    guest: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     order: Mapped["Order"] = relationship("Order", back_populates="items")
 
     menu_item: Mapped[Optional["MenuItem"]] = relationship(
@@ -948,6 +963,61 @@ class ImportShare(Base):
 
     workplace: Mapped["Workplace"] = relationship("Workplace")
 
+
+class Reminder(Base):
+    """
+    Personal reminder for a user. The Telegram bot is responsible for
+    sending the actual notification at remind_at - lead_minutes*60; the
+    backend just stores the data and exposes CRUD.
+
+    A reminder is personal — there is no workplace or shift binding. The
+    user sees their reminders across all workplaces. They are one-shot:
+    notify once, then `notified_at` is set and the bot won't fire again.
+    """
+    __tablename__ = "reminders"
+
+    __table_args__ = (
+    CheckConstraint("lead_minutes >= 0", name="ck_reminders_lead_nonnegative"),
+    Index("ix_reminders_user_remind_at", "user_id", "remind_at"),
+    Index("ix_reminders_user_done", "user_id", "is_done"),
+    Index("ix_reminders_pending", "is_done", "notified_at"),
+    )
+
+    id: Mapped[str] = mapped_column(ID21, primary_key=True)
+
+    user_id: Mapped[int] = mapped_column(
+    BigInteger,
+    ForeignKey("users.id", ondelete="CASCADE"),
+    index=True,
+    nullable=False,
+    )
+
+    # Reminder text. Capped at 255 — matches the spec; longer text would
+    # be awkward as a notification message anyway. NOT NULL: an empty
+    # reminder makes no sense.
+    text: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Unix timestamp (seconds, UTC) when the reminder should fire.
+    remind_at: Mapped[int] = mapped_column(TS, nullable=False)
+
+    # Minutes before remind_at to send the notification.
+    # 0 = at the exact time; UI presets are 0/5/15/30/60/120/1440.
+    # Stored as a number rather than enum so future presets are free.
+    lead_minutes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Marked done by the user (toggle in UI). Done items stay in the list
+    # so the user can revisit; the worker won't notify after this is True.
+    is_done: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Unix ts when the bot sent the notification. NULL = pending, value =
+    # already fired. The worker uses this as an idempotency guard; the
+    # API resets it to NULL whenever remind_at or lead_minutes change.
+    notified_at: Mapped[Optional[int]] = mapped_column(TS, nullable=True)
+
+    created_at: Mapped[int] = mapped_column(TS, default=utc_ts, nullable=False)
+    updated_at: Mapped[int] = mapped_column(TS, default=utc_ts, onupdate=utc_ts, nullable=False)
+
+    user: Mapped["User"] = relationship("User", back_populates="reminders")
 
 # =========================
 # DB Init

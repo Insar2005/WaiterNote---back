@@ -81,9 +81,15 @@ async def create_order(
     order_id: str,
     shift: Shift,
     table_id: str | None,
-    items: Iterable[dict],  # [{id, menu_item_id, title, price, quantity, comment}]
+    items: Iterable[dict],
     comments: str | None,
+    guests_count: int = 1,
 ) -> Order:
+    """Same as before plus an optional `guests_count` (1..10). Each
+    raw item dict may carry a `guest` field (1..guests_count); items
+    without one default to guest=1. The Pydantic OrderCreate validates
+    the range/cross-consistency before we get here, so the values are
+    already known-good — but legacy callers may still hit defaults."""
     """
     Create an order and (optionally) attach to a table. Atomic.
 
@@ -138,19 +144,20 @@ async def create_order(
         hall_name = hall_obj.name
 
     order = Order(
-        id=order_id,
-        shift_id=shift.id,
-        hall_id=hall_id,
-        table_id=table_id,
-        table_number=table_number,
-        hall_name=hall_name,
-        comments=comments,
-        is_paid=False,
-        is_done=False,
-        tips=0.0,
-        total_price=0.0,
-        closed_at=None,
-    )
+    id=order_id,
+    shift_id=shift.id,
+    hall_id=hall_id,
+    table_id=table_id,
+    table_number=table_number,
+    hall_name=hall_name,
+    comments=comments,
+    is_paid=False,
+    is_done=False,
+    tips=0.0,
+    total_price=0.0,
+    closed_at=None,
+    guests_count=guests_count,
+)
     session.add(order)
 
     items_list = list(items)
@@ -164,6 +171,7 @@ async def create_order(
             quantity=int(raw["quantity"]),
             total_price=_item_total(raw["price"], raw["quantity"]),
             comment=raw.get("comment"),
+            guest=int(raw.get("guest", 1)),
         )
         session.add(oi)
 
@@ -212,6 +220,7 @@ async def add_items(
             quantity=int(raw["quantity"]),
             total_price=_item_total(raw["price"], raw["quantity"]),
             comment=raw.get("comment"),
+            guest=int(raw.get("guest", 1)),
         )
         session.add(oi)
 
@@ -483,6 +492,7 @@ async def edit_paid_order(
     items: list[dict] | None = None,
     tips: float | None = None,
     comments: str | None = None,
+    guests_count: int | None = None,
 ) -> Order:
     """
     Edit a paid order's items, tips, or comments. The order stays paid;
@@ -539,10 +549,13 @@ async def edit_paid_order(
                     quantity=qty,
                     total_price=_item_total(price, qty),
                     comment=raw.get("comment"),
+                    guest=int(raw.get("guest", 1)),
                 )
             )
         _recompute_order_total(order)
 
+    if guests_count is not None:
+        order.guests_count = int(guests_count)
     if tips is not None:
         order.tips = float(tips)
     if comments is not None:

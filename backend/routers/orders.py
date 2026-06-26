@@ -141,6 +141,7 @@ async def create_order(
         table_id=body.table_id,
         items=[i.model_dump() for i in body.items],
         comments=body.comments,
+        guests_count=body.guests_count,
     )
     await session.commit()
     await session.refresh(order, attribute_names=["items"])
@@ -183,6 +184,7 @@ async def create_order_in_current_shift(
         table_id=body.table_id,
         items=[i.model_dump() for i in body.items],
         comments=body.comments,
+        guests_count=body.guests_count,
     )
     await session.commit()
     await session.refresh(order, attribute_names=["items"])
@@ -338,6 +340,7 @@ async def edit_paid_order(
         items=[i.model_dump() for i in body.items] if body.items is not None else None,
         tips=body.tips,
         comments=body.comments,
+        guests_count=body.guests_count,
     )
     await session.commit()
     await session.refresh(order, attribute_names=["items"])
