@@ -6,7 +6,7 @@ import ssl
 from pathlib import Path
 from datetime import datetime, timezone as timeZone
 from typing import Optional, List
-
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -865,7 +865,28 @@ class MenuCategory(Base):
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    # nullable → корневая категория; заполнено → подкатегория. Глубина не
+    # ограничена. CASCADE удаляет поддерево при физическом удалении
+    # родителя (soft-delete через is_active работает независимо).
+    parent_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("menu_categories.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
+    )
+
     workplace: Mapped["Workplace"] = relationship("Workplace", back_populates="menu_categories")
+
+    parent: Mapped[Optional["MenuCategory"]] = relationship(
+        "MenuCategory",
+        remote_side="MenuCategory.id",
+        back_populates="children",
+    )
+    children: Mapped[List["MenuCategory"]] = relationship(
+        "MenuCategory",
+        back_populates="parent",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     items: Mapped[List["MenuItem"]] = relationship(
         "MenuItem",
@@ -896,7 +917,13 @@ class MenuItem(Base):
     portion: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     price: Mapped[float] = mapped_column(MONEY, nullable=False)
-
+    # Частые комментарии-подсказки в модалке заказа: ["без лука", "medium", "с собой"]
+    comment_chips: Mapped[list[str]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default="[]",
+        nullable=False,
+    )
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

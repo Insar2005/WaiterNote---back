@@ -11,6 +11,7 @@ class MenuItemBase(APIModel):
     description: Optional[str] = Field(default=None, max_length=2000)
     portion: Optional[str] = Field(default=None, max_length=50)
     price: float = Field(ge=0)
+    comment_chips: list[str] = Field(default_factory=list)
 
 
 class MenuItemCreate(MenuItemBase):
@@ -23,8 +24,8 @@ class MenuItemUpdate(APIModel):
     portion: Optional[str] = Field(default=None, max_length=50)
     price: Optional[float] = Field(default=None, ge=0)
     is_active: Optional[bool] = None
-    # category_id: позволяем переносить позицию в другую категорию того же workplace
     category_id: Optional[NanoID] = None
+    comment_chips: Optional[list[str]] = None
 
 
 class MenuItemOut(MenuItemBase):
@@ -38,6 +39,7 @@ class MenuItemOut(MenuItemBase):
 
 class MenuCategoryBase(APIModel):
     title: str = Field(min_length=1, max_length=100)
+    parent_id: Optional[NanoID] = None
 
 
 class MenuCategoryCreate(MenuCategoryBase):
@@ -47,6 +49,7 @@ class MenuCategoryCreate(MenuCategoryBase):
 class MenuCategoryUpdate(APIModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=100)
     is_active: Optional[bool] = None
+    parent_id: Optional[NanoID] = None  # null → сделать корневой
 
 
 class MenuCategoryOut(MenuCategoryBase):

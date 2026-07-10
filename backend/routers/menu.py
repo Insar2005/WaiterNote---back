@@ -121,15 +121,23 @@ async def create_category(
     if existing is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "category id already exists")
 
+    # position считается среди siblings одного родителя, чтобы новая
+    # подкатегория падала в конец списка внутри своего parent.
     max_pos = await session.scalar(
         select(func.coalesce(func.max(MenuCategory.position), -1))
-        .where(MenuCategory.workplace_id == workplace.id)
+        .where(
+            MenuCategory.workplace_id == workplace.id,
+            MenuCategory.parent_id.is_(body.parent_id)
+            if body.parent_id is None
+            else MenuCategory.parent_id == body.parent_id,
+        )
     )
 
     cat = MenuCategory(
         id=body.id,
         workplace_id=workplace.id,
         title=body.title,
+        parent_id=body.parent_id,
         position=max_pos + 1,
     )
     session.add(cat)
@@ -212,6 +220,7 @@ async def create_item(
         description=body.description,
         portion=body.portion,
         price=body.price,
+        comment_chips=body.comment_chips,
         position=max_pos + 1,
     )
     session.add(item)
