@@ -11,8 +11,69 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from models import Shift, Order, Workplace, User
+from models import Shift, Order, OrderItem, Workplace, User
 from utils.time import utc_ts
+from services import telegram_bot
+
+import asyncio
+import logging
+
+log = logging.getLogger(__name__)
+
+_CURRENCY_SIGN = {"RUB": "₽", "KGS": "сом", "KZT": "₸", "UZS": "сум", "USD": "$"}
+
+
+def _money(value: float, currency: str) -> str:
+    sign = _CURRENCY_SIGN.get((currency or "").upper(), currency or "")
+    return f"{int(round(value or 0)):,} {sign}".replace(",", " ").strip()
+
+
+def _dur(seconds: int) -> str:
+    h, m = seconds // 3600, (seconds % 3600) // 60
+    return f"{h} ч {m} м" if h else f"{m} м"
+
+
+async def _shift_summary_push(session: AsyncSession, shift: Shift) -> None:
+    """Итог смены в Telegram от Кибер Шефа. Best-effort: любая ошибка
+    здесь не должна помешать закрытию смены — только лог."""
+    try:
+        user = await session.get(User, shift.opened_by_user_id)
+        if user is None or not user.tg_id:
+            return
+        workplace = await session.get(Workplace, shift.workplace_id)
+        currency = getattr(workplace, "currency", "RUB") or "RUB"
+
+        top_stmt = (
+            select(
+                OrderItem.title,
+                func.sum(OrderItem.quantity).label("qty"),
+            )
+            .join(Order, Order.id == OrderItem.order_id)
+            .where(Order.shift_id == shift.id, Order.is_paid.is_(True))
+            .group_by(OrderItem.title)
+            .order_by(func.sum(OrderItem.quantity).desc())
+            .limit(3)
+        )
+        top = (await session.execute(top_stmt)).all()
+
+        lines = [
+            f"Смена закрыта · {_dur(int((shift.end_time or 0) - (shift.start_time or 0)))}",
+            f"Касса: {_money(shift.total_cash_register, currency)}"
+            f" · Чаевые: {_money(shift.total_tips, currency)}"
+            f" · Заказов: {shift.order_count}",
+        ]
+        if top:
+            lines.append(
+                "Топ: " + ", ".join(f"{t.title} ×{int(t.qty)}" for t in top)
+            )
+        if workplace is not None and getattr(workplace, "title", None):
+            lines.append(workplace.title)
+
+        text = "\n".join(lines)
+        # fire-and-forget: доставка — приятность, не транзакция
+        asyncio.create_task(telegram_bot.send_message(user.tg_id, text))
+    except Exception:
+        log.exception("shift summary push failed")
 
 
 async def get_open_shift(
@@ -213,5 +274,8 @@ async def close_shift(
     shift.end_time = now
     shift.is_closed = True
     shift.duration = max(0, now - shift.start_time)
+
+    # Итог смены официанту в Telegram (после пересчёта агрегатов).
+    await _shift_summary_push(session, shift)
 
     return shift
