@@ -33,8 +33,7 @@ class OrderItemUpdate(APIModel):
     price: Optional[float] = Field(default=None, ge=0)
     quantity: Optional[int] = Field(default=None, ge=1)
     comment: Optional[str] = Field(default=None, max_length=2000)
-    # 0..quantity; верхнюю границу клампит сервис (тут quantity неизвестен)
-    served: Optional[int] = Field(default=None, ge=0)
+    served: Optional[bool] = None
 
 
 class OrderItemOut(APIModel):
@@ -46,7 +45,7 @@ class OrderItemOut(APIModel):
     quantity: int
     total_price: float
     comment: Optional[str]
-    served: int
+    served: bool
     # Always returned. Defaults to 1 for legacy orders (per ALTER TABLE
     # DEFAULT). The client groups items by this number in the cart, in
     # the finalized order view, and in history.

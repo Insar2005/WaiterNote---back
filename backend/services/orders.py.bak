@@ -246,7 +246,7 @@ async def update_item(
     quantity: int | None = None,
     comment: str | None = None,
     title: str | None = None,
-    served: int | None = None,
+    served: bool | None = None,
     _comment_set: bool = False,
 ) -> Order:
     """Caller passes only fields that should change.
@@ -272,13 +272,10 @@ async def update_item(
         item.price = float(price)
     if quantity is not None:
         item.quantity = int(quantity)
-        # количество уменьшили — подача не должна его превышать
-        item.served = min(int(item.served or 0), item.quantity)
     if _comment_set:
         item.comment = comment
     if served is not None:
-        # поштучная подача: клампим в 0..quantity
-        item.served = max(0, min(int(served), item.quantity))
+        item.served = bool(served)
     item.total_price = _item_total(item.price, item.quantity)
 
     await session.flush()

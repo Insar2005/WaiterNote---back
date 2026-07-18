@@ -560,10 +560,6 @@ class OrderItem(Base):
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_order_items_quantity_positive"),
         CheckConstraint("price >= 0", name="ck_order_items_price_nonnegative"),
-        CheckConstraint(
-            "served >= 0 AND served <= quantity",
-            name="ck_order_items_served_range",
-        ),
     )
 
     id: Mapped[str] = mapped_column(ID21, primary_key=True)
@@ -591,10 +587,8 @@ class OrderItem(Base):
 
     # True when the waiter has physically brought this item to the table.
     # Helps trace progress on multi-item orders ("3/5 поданo").
-    # Счётчик поданных штук: 0..quantity (0 — не подано, quantity — целиком).
-    # Тап в карточке заказа циклит 0 -> 1 -> ... -> quantity -> 0.
-    # PATCH /orders/order-items/{id}.
-    served: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Defaults to False on creation; toggled via PATCH /orders/order-items/{id}.
+    served: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Guest index this item belongs to (1..Order.guests_count). 1 by
 # default — the single-bill behaviour. Used by the per-guest cart
 # split in the order builder; carried in create / add-items /
