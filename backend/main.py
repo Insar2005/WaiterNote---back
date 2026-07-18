@@ -11,6 +11,22 @@ from routers import (
 )
 from services import reminders_worker
 
+# ── Sentry: только ошибки; включается наличием SENTRY_DSN в env ──────
+import os
+
+try:
+    import sentry_sdk
+
+    if os.getenv("SENTRY_DSN"):
+        sentry_sdk.init(
+            dsn=os.environ["SENTRY_DSN"],
+            environment=os.getenv("RAILWAY_ENVIRONMENT_NAME", "production"),
+            traces_sample_rate=0.0,
+        )
+except ImportError:
+    # sentry-sdk ещё не установлен — работаем без него
+    pass
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
