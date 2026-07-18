@@ -111,6 +111,42 @@ async def get_menu(
     return categories
 
 
+
+async def _validate_parent(
+    session,
+    *,
+    workplace_id: str,
+    category_id: str | None,
+    parent_id: str | None,
+) -> None:
+    """Проверка parent_id перед записью: родитель существует, принадлежит
+    тому же заведению, не сама категория и не её потомок (иначе цикл —
+    обе ветки исчезают из дерева на клиенте)."""
+    if parent_id is None:
+        return
+    if category_id is not None and parent_id == category_id:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "category cannot be its own parent"
+        )
+    parent = await session.get(MenuCategory, parent_id)
+    if parent is None or parent.workplace_id != workplace_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "parent category not found")
+    # подъём по цепочке родителей: если встретили category_id — цикл
+    if category_id is not None:
+        seen: set[str] = set()
+        cursor = parent
+        while cursor is not None and cursor.parent_id is not None:
+            if cursor.parent_id == category_id:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "cannot move category into its own subtree",
+                )
+            if cursor.parent_id in seen:
+                break  # уже существующий цикл в данных — не зависаем
+            seen.add(cursor.parent_id)
+            cursor = await session.get(MenuCategory, cursor.parent_id)
+
+
 @cat_under_wp.post("/categories", response_model=MenuCategoryOut, status_code=status.HTTP_201_CREATED)
 async def create_category(
     body: MenuCategoryCreate,
@@ -120,6 +156,13 @@ async def create_category(
     existing = await session.get(MenuCategory, body.id)
     if existing is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "category id already exists")
+
+    await _validate_parent(
+        session,
+        workplace_id=workplace.id,
+        category_id=None,
+        parent_id=body.parent_id,
+    )
 
     # position считается среди siblings одного родителя, чтобы новая
     # подкатегория падала в конец списка внутри своего parent.
@@ -153,6 +196,13 @@ async def update_category(
     session: SessionDep,
 ):
     patch = body.model_dump(exclude_unset=True)
+    if "parent_id" in patch:
+        await _validate_parent(
+            session,
+            workplace_id=cat.workplace_id,
+            category_id=cat.id,
+            parent_id=patch["parent_id"],
+        )
     for k, v in patch.items():
         setattr(cat, k, v)
     await session.commit()
